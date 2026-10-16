@@ -1,0 +1,1 @@
+import{i as e,t}from"./react-DB-4Zxce.js";import{i as n,r}from"./index-DIsjcIfj.js";import{i,n as a,t as o}from"./sign-in-panel-CoP1R26T.js";var s=e(t()),c=n();function l(){let{user:e,isPending:t}=i(),[n,l]=(0,s.useState)(!1);return(0,s.useEffect)(()=>l(!0),[]),!n||t?(0,c.jsx)(o,{}):e?(0,c.jsx)(r,{to:`/`}):(0,c.jsx)(a,{})}export{l as component};
