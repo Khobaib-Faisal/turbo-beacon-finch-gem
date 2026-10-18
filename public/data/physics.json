@@ -1,0 +1,204 @@
+[
+  {
+    "chapter": "Units, Dimensions & Measurements",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Kinematics (1D & 2D)",
+    "subject": "physics",
+    "questions": [
+      {
+        "id": "phy-kin-001",
+        "source": "JEE Main 2024",
+        "type": "mcq",
+        "question": "A particle starts from rest and moves with uniform acceleration. If it covers distance s1 in the first 5 seconds and distance s2 in the next 5 seconds, then the relation between s1 and s2 is:",
+        "options": ["s2 = 2 s1", "s2 = 3 s1", "s2 = 4 s1", "s2 = s1"],
+        "correctAnswer": 1,
+        "explanation": "By Galileo's odd number rule for successive equal time intervals from rest, distance ratio is 1 : 3 : 5. Hence, s2 = 3 s1."
+      },
+      {
+        "id": "phy-kin-002",
+        "source": "JEE Main 2023",
+        "type": "mcq",
+        "question": "A projectile is thrown with an initial velocity of (6i + 8j) m/s. If g = 10 m/s², the horizontal range of the projectile is:",
+        "options": ["4.8 m", "9.6 m", "12.8 m", "14.4 m"],
+        "correctAnswer": 1,
+        "explanation": "ux = 6 m/s, uy = 8 m/s. Range R = 2 * ux * uy / g = 2 * 6 * 8 / 10 = 9.6 m."
+      },
+      {
+        "id": "phy-kin-003",
+        "source": "JEE Main 2024",
+        "type": "integer",
+        "question": "A ball is dropped from a height of 180 m above the ground. Taking g = 10 m/s², the distance traveled by the ball in the last second of its motion is ____ m.",
+        "correctAnswer": 55,
+        "explanation": "Total time t = √(2h/g) = √(360/10) = 6 s. Distance in 6th second = 0 + 10/2 * (2*6 - 1) = 5 * 11 = 55 m."
+      },
+      {
+        "id": "phy-kin-004",
+        "source": "JEE Advanced 2022",
+        "type": "mcq",
+        "question": "A ball is projected from ground with speed u at angle θ with horizontal. At highest point, radius of curvature of its trajectory is:",
+        "options": ["u² cos²θ / g", "u² sin²θ / g", "u² / g", "u² cosθ / g"],
+        "correctAnswer": 0,
+        "explanation": "At highest point, velocity v = u cosθ is purely horizontal and normal acceleration is g. Radius of curvature R = v² / a_n = u² cos²θ / g."
+      },
+      {
+        "id": "phy-kin-005",
+        "source": "JEE Main 2023",
+        "type": "integer",
+        "question": "A car covers first half of total distance with speed 40 km/h and second half with speed 60 km/h. The average speed of the car for the entire journey is ____ km/h.",
+        "correctAnswer": 48,
+        "explanation": "For equal distances, v_avg = 2 * v1 * v2 / (v1 + v2) = 2 * 40 * 60 / 100 = 48 km/h."
+      }
+    ]
+  },
+  {
+    "chapter": "Laws of Motion & Friction",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Work, Energy & Power",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Center of Mass & Collisions",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Rotational Motion",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Gravitation",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Mechanical Properties of Solids",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Fluid Mechanics",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Thermal Properties & Calorimetry",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Thermodynamics & KTG",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Simple Harmonic Motion (SHM)",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Waves & Sound",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Electrostatics & Gauss's Law",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Capacitance",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Current Electricity",
+    "subject": "physics",
+    "questions": [
+      {
+        "id": "phy-ce-001",
+        "source": "JEE Main 2024",
+        "type": "mcq",
+        "question": "A wire of resistance 16 Ω is elongated to double its original length by stretching it uniformly. The resistance of the elongated wire is:",
+        "options": ["32 Ω", "64 Ω", "4 Ω", "16 Ω"],
+        "correctAnswer": 1,
+        "explanation": "Volume remains constant (V = A * L). Doubling length halves area. R' = ρ(2L)/(A/2) = 4R = 64 Ω."
+      },
+      {
+        "id": "phy-ce-002",
+        "source": "JEE Main 2023",
+        "type": "integer",
+        "question": "In a meter bridge experiment, null point is found at 40 cm from end A when a known resistance of 6 Ω is connected in the right gap. The value of unknown resistance in the left gap is ____ Ω.",
+        "correctAnswer": 4,
+        "explanation": "R / 6 = 40 / 60 = 2 / 3 => R = 4 Ω."
+      }
+    ]
+  },
+  {
+    "chapter": "Magnetic Effects of Current",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Magnetism & Matter",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Electromagnetic Induction (EMI)",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Alternating Current (AC)",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Electromagnetic Waves",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Ray Optics & Optical Instruments",
+    "subject": "physics",
+    "questions": [
+      {
+        "id": "phy-ro-001",
+        "source": "JEE Main 2024",
+        "type": "mcq",
+        "question": "A convex lens of focal length 20 cm (μ = 1.5) is immersed in water (μ = 4/3). The new focal length in water is:",
+        "options": ["40 cm", "60 cm", "80 cm", "100 cm"],
+        "correctAnswer": 2,
+        "explanation": "1/f_air = (1.5 - 1) * K = 1/20 => K = 1/10. 1/f_water = ((1.5/(4/3)) - 1) * K = 1/80 => f = 80 cm."
+      }
+    ]
+  },
+  {
+    "chapter": "Wave Optics",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Dual Nature of Matter & Radiation",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Atoms & Nuclei",
+    "subject": "physics",
+    "questions": []
+  },
+  {
+    "chapter": "Semiconductors",
+    "subject": "physics",
+    "questions": []
+  }
+]
