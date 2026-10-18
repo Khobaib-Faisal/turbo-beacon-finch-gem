@@ -332,7 +332,6 @@ export function DeskApp() {
       ? desk.streak + 1
       : desk.streak;
 
-  const currentChapterObj = PYQ_DATA.find((c) => c.chapter === selectedChapter);
   const activeQuestion = currentChapterObj && activeQuestionIdx !== null 
     ? currentChapterObj.questions[activeQuestionIdx] 
     : null;
