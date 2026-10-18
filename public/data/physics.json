@@ -1,210 +1,484 @@
 [
   {
-    "chapter": "Units, Dimensions & Measurements",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Kinematics (1D & 2D)",
+    "chapter": "Kinematics",
     "subject": "physics",
     "questions": [
       {
-        "id": "phy-kin-001",
-        "source": "JEE Main 2024",
+        "id": "phy_kin_01",
+        "source": "JEE Main pattern",
         "type": "mcq",
-        "question": "A particle starts from rest and moves with uniform acceleration. If it covers distance s1 in the first 5 seconds and distance s2 in the next 5 seconds, then the relation between s1 and s2 is:",
-        "options": ["s2 = 2 s1", "s2 = 3 s1", "s2 = 4 s1", "s2 = s1"],
-        "correctAnswer": 1,
-        "explanation": "By Galileo's odd number rule for successive equal time intervals from rest, distance ratio is 1 : 3 : 5. Hence, s2 = 3 s1."
+        "question": "A particle starts from rest. Its acceleration at time t seconds is a = 2t m/s². The distance travelled in the first 3 s is",
+        "options": [
+          "3 m",
+          "6 m",
+          "9 m",
+          "27 m"
+        ],
+        "correctAnswer": 2,
+        "explanation": "Acceleration a = dv/dt = 2t. Integrating from rest, v = t². Distance s = ∫ v dt = ∫ t² dt from 0 to 3 = [t³/3] from 0 to 3 = 9 m."
       },
       {
-        "id": "phy-kin-002",
-        "source": "JEE Main 2023",
-        "type": "mcq",
-        "question": "A projectile is thrown with an initial velocity of (6i + 8j) m/s. If g = 10 m/s², the horizontal range of the projectile is:",
-        "options": ["4.8 m", "9.6 m", "12.8 m", "14.4 m"],
-        "correctAnswer": 1,
-        "explanation": "ux = 6 m/s, uy = 8 m/s. Range R = 2 * ux * uy / g = 2 * 6 * 8 / 10 = 9.6 m."
-      },
-      {
-        "id": "phy-kin-003",
-        "source": "JEE Main 2024",
+        "id": "phy_kin_02",
+        "source": "JEE Main pattern",
         "type": "integer",
-        "question": "A ball is dropped from a height of 180 m above the ground. Taking g = 10 m/s², the distance traveled by the ball in the last second of its motion is ____ m.",
-        "correctAnswer": 55,
-        "explanation": "Total time t = √(2h/g) = √(360/10) = 6 s. Distance in 6th second = 0 + 10/2 * (2*6 - 1) = 5 * 11 = 55 m."
+        "question": "A particle is projected from level ground with speed 20 m/s. Take g = 10 m/s². The maximum possible horizontal range, in metres, is",
+        "correctAnswer": 40,
+        "explanation": "Range R = u² sin 2θ / g. This is maximum when sin 2θ = 1, so 2θ = 90° and θ = 45°. Rmax = u²/g = 400/10 = 40 m."
       },
       {
-        "id": "phy-kin-004",
-        "source": "JEE Advanced 2022",
-        "type": "mcq",
-        "question": "A ball is projected from ground with speed u at angle θ with horizontal. At highest point, radius of curvature of its trajectory is:",
-        "options": ["u² cos²θ / g", "u² sin²θ / g", "u² / g", "u² cosθ / g"],
-        "correctAnswer": 0,
-        "explanation": "At highest point, velocity v = u cosθ is purely horizontal and normal acceleration is g. Radius of curvature R = v² / a_n = u² cos²θ / g."
-      },
-      {
-        "id": "phy-kin-005",
-        "source": "JEE Main 2023",
+        "id": "phy_kin_03",
+        "source": "JEE Main pattern",
         "type": "integer",
-        "question": "A car covers first half of total distance with speed 40 km/h and second half with speed 60 km/h. The average speed of the car for the entire journey is ____ km/h.",
-        "correctAnswer": 48,
-        "explanation": "For equal distances, v_avg = 2 * v1 * v2 / (v1 + v2) = 2 * 40 * 60 / 100 = 48 km/h."
+        "question": "A car starts from rest and reaches 20 m/s in 10 s at constant acceleration. It then moves at 20 m/s for the next 10 s. It finally comes to rest in the next 5 s at constant deceleration. The total distance travelled, in metres, is",
+        "correctAnswer": 350,
+        "explanation": "Stage 1: average speed 10 m/s for 10 s, so s1 = 100 m. Stage 2: s2 = 20 × 10 = 200 m. Stage 3: average speed 10 m/s for 5 s, so s3 = 50 m. Total s = 100 + 200 + 50 = 350 m."
+      },
+      {
+        "id": "phy_kin_04",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "A man walks due east at 3 m/s. To him, rain appears to fall vertically. The actual velocity of the rain makes 30° with the vertical. The speed of the rain is",
+        "options": [
+          "3 m/s",
+          "3√3 m/s",
+          "6 m/s",
+          "6√3 m/s"
+        ],
+        "correctAnswer": 2,
+        "explanation": "Rain appears vertical, so the horizontal component of the rain velocity equals the man's speed, 3 m/s east. If the actual rain velocity makes 30° with the vertical, its horizontal component is v sin 30° = v/2. Thus v/2 = 3, so v = 6 m/s."
+      },
+      {
+        "id": "phy_kin_05",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "A ball is thrown vertically upward with speed 20 m/s. Take g = 10 m/s². The total distance travelled by the ball until it returns to the point of projection is",
+        "options": [
+          "0 m",
+          "20 m",
+          "40 m",
+          "80 m"
+        ],
+        "correctAnswer": 2,
+        "explanation": "Maximum height H = u²/(2g) = 400/20 = 20 m. The ball goes up 20 m and comes down 20 m, so the path length is 40 m. The displacement for the round trip is zero, but distance is not."
       }
     ]
   },
   {
-    "chapter": "Laws of Motion & Friction",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Work, Energy & Power",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Center of Mass & Collisions",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Rotational Motion",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Gravitation",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Mechanical Properties of Solids",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Fluid Mechanics",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Thermal Properties & Calorimetry",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Thermodynamics & KTG",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Simple Harmonic Motion (SHM)",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Waves & Sound",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Electrostatics & Gauss's Law",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Capacitance",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Current Electricity",
+    "chapter": "Laws of Motion and Work, Power, Energy",
     "subject": "physics",
     "questions": [
       {
-        "id": "phy_curr_01",
-        "source": "JEE Main 2023",
+        "id": "phy_lom_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "Two masses of 3 kg and 1 kg hang from a light inextensible string over a frictionless pulley. Take g = 10 m/s². The magnitude of acceleration of either mass, in m/s², is",
+        "correctAnswer": 5,
+        "explanation": "For an Atwood machine, a = (m1 − m2)g / (m1 + m2) = (3 − 1) × 10 / (3 + 1) = 20/4 = 5 m/s². The heavier mass descends."
+      },
+      {
+        "id": "phy_lom_02",
+        "source": "JEE Main pattern",
         "type": "mcq",
-        "question": "For the given circuit diagram below, determine the equivalent resistance between terminals A and B:",
-        "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/7/7b/Wheatstonebridge.svg",
+        "question": "A spring of force constant 100 N/m is compressed by 20 cm on a smooth horizontal table and a 1 kg block is released from rest against it. The maximum speed of the block is",
         "options": [
-          "R / 2",
-          "R",
-          "2R",
-          "4R"
+          "1 m/s",
+          "2 m/s",
+          "4 m/s",
+          "10 m/s"
         ],
         "correctAnswer": 1,
-        "explanation": "Since the bridge is balanced, no current flows through the central branch. The two upper and two lower resistors are in series (2R and 2R) and both branches are in parallel, giving Req = (2R * 2R) / (2R + 2R) = R."
+        "explanation": "Spring energy converts fully into kinetic energy: (1/2)kx² = (1/2)mv². So v = x √(k/m) = 0.20 × √(100/1) = 0.20 × 10 = 2 m/s."
       },
       {
-        "id": "phy_curr_02",
-        "source": "JEE Main 2024",
+        "id": "phy_lom_03",
+        "source": "JEE Main pattern",
         "type": "integer",
-        "question": "A cylindrical wire of radius 1 mm and length 2 m carries a uniform current density of 4 × 10^5 A/m^2. Calculate the total current in the wire (approximate integer in mA, take π = 3.14):",
-        "correctAnswer": 1256,
-        "explanation": "Current I = J * A = J * (π * r^2) = (4 * 10^5) * (3.14 * (10^-3)^2) = 1.256 A = 1256 mA."
+        "question": "A 5 kg block is on a horizontal surface with coefficient of kinetic friction 0.2. A horizontal force of 20 N is applied. Take g = 10 m/s². The acceleration of the block, in m/s², is",
+        "correctAnswer": 2,
+        "explanation": "Normal reaction N = mg = 50 N. Kinetic friction f = μN = 0.2 × 50 = 10 N, opposite the motion. Net force = 20 − 10 = 10 N. a = 10/5 = 2 m/s². The applied force exceeds limiting friction, so the block does slide."
+      },
+      {
+        "id": "phy_lom_04",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "A 2 kg body on a smooth horizontal surface is accelerated from rest to 4 m/s by a horizontal force. The work done by that force is",
+        "options": [
+          "4 J",
+          "8 J",
+          "16 J",
+          "32 J"
+        ],
+        "correctAnswer": 2,
+        "explanation": "By the work-energy theorem, work done by the only horizontal force equals the gain in kinetic energy. ΔK = (1/2)mv² − 0 = (1/2)(2)(16) = 16 J."
+      },
+      {
+        "id": "phy_lom_05",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "A bullet of mass 0.01 kg moving at 200 m/s embeds in a stationary block of mass 1.99 kg. The kinetic energy converted into heat and deformation, in joules, is",
+        "options": [
+          "1",
+          "100",
+          "199",
+          "200"
+        ],
+        "correctAnswer": 2,
+        "explanation": "Momentum conservation: 0.01 × 200 = (0.01 + 1.99)V, so V = 2/2 = 1 m/s. Initial KE = (1/2)(0.01)(200)² = 200 J. Final KE = (1/2)(2)(1)² = 1 J. Loss = 200 − 1 = 199 J."
       }
     ]
   },
   {
-    "chapter": "Magnetic Effects of Current",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Magnetism & Matter",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Electromagnetic Induction (EMI)",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Alternating Current (AC)",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Electromagnetic Waves",
-    "subject": "physics",
-    "questions": []
-  },
-  {
-    "chapter": "Ray Optics & Optical Instruments",
+    "chapter": "Rotational Dynamics",
     "subject": "physics",
     "questions": [
       {
-        "id": "phy-ro-001",
-        "source": "JEE Main 2024",
+        "id": "phy_rot_01",
+        "source": "JEE Main pattern",
         "type": "mcq",
-        "question": "A convex lens of focal length 20 cm (μ = 1.5) is immersed in water (μ = 4/3). The new focal length in water is:",
-        "options": ["40 cm", "60 cm", "80 cm", "100 cm"],
+        "question": "A solid sphere and a thin spherical shell have the same mass and radius and roll without slipping down the same incline from rest. The ratio of their linear accelerations (solid sphere : shell) is",
+        "options": [
+          "5/7",
+          "3/5",
+          "25/21",
+          "21/25"
+        ],
         "correctAnswer": 2,
-        "explanation": "1/f_air = (1.5 - 1) * K = 1/20 => K = 1/10. 1/f_water = ((1.5/(4/3)) - 1) * K = 1/80 => f = 80 cm."
+        "explanation": "For rolling without slipping, a = g sinθ / (1 + I/(MR²)). For a solid sphere I/(MR²) = 2/5, so a_s = g sinθ / (7/5) = (5/7) g sinθ. For a thin spherical shell I/(MR²) = 2/3, so a_h = g sinθ / (5/3) = (3/5) g sinθ. Ratio a_s/a_h = (5/7) ÷ (3/5) = 25/21."
+      },
+      {
+        "id": "phy_rot_02",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A uniform disc of mass 2 kg and radius 0.4 m rotates at 10 rad/s about its central axis perpendicular to its plane. Its rotational kinetic energy, in joules, is",
+        "correctAnswer": 8,
+        "explanation": "For a disc about its central axis, I = (1/2)MR² = (1/2)(2)(0.4)² = 0.16 kg m². Rotational KE = (1/2)Iω² = (1/2)(0.16)(100) = 8 J."
+      },
+      {
+        "id": "phy_rot_03",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "The moment of inertia of a thin ring of mass M and radius R about a diameter is",
+        "options": [
+          "MR²",
+          "MR²/2",
+          "2MR²",
+          "MR²/4"
+        ],
+        "correctAnswer": 1,
+        "explanation": "About the axis through the centre and perpendicular to the plane, I_z = MR². That axis and two perpendicular diameters are mutually perpendicular. By the perpendicular-axis theorem, I_z = I_x + I_y. Symmetry gives I_x = I_y, so each diameter has I = MR²/2."
+      },
+      {
+        "id": "phy_rot_04",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A particle of mass 2 kg moves at 3 m/s. The perpendicular distance from a fixed axis to its velocity line is 4 m. The magnitude of its angular momentum about that axis, in kg m²/s, is",
+        "correctAnswer": 24,
+        "explanation": "For a particle, L = m v r_perp when v is perpendicular to the position arm used, or more generally L = m v d where d is the perpendicular distance from the axis to the line of velocity. L = 2 × 3 × 4 = 24 kg m²/s."
+      },
+      {
+        "id": "phy_rot_05",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A solid cylinder of mass 4 kg rolls without slipping on a horizontal surface at centre-of-mass speed 2 m/s. Its total kinetic energy, in joules, is",
+        "correctAnswer": 12,
+        "explanation": "Total KE = translational + rotational = (1/2)mv² + (1/2)Iω². For a solid cylinder I = (1/2)mR² and ω = v/R, so rotational KE = (1/4)mv². Total KE = (3/4)mv² = (3/4)(4)(4) = 12 J."
       }
     ]
   },
   {
-    "chapter": "Wave Optics",
+    "chapter": "Gravitation and Mechanical Properties of Solids and Fluids",
     "subject": "physics",
-    "questions": []
+    "questions": [
+      {
+        "id": "phy_gra_01",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "The acceleration due to gravity at a height equal to the Earth's radius R, above the surface, is",
+        "options": [
+          "g/2",
+          "g/4",
+          "g/√2",
+          "2g"
+        ],
+        "correctAnswer": 1,
+        "explanation": "Outside the Earth, g(h) = GM/(R+h)². At h = R, g' = GM/(2R)² = (GM/R²)/4 = g/4. The linear approximation g(1 − 2h/R) is only for h much smaller than R, so it must not be used here."
+      },
+      {
+        "id": "phy_gra_02",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "For a planet, the ratio of escape speed from the surface to the orbital speed of a satellite in a very low circular orbit is",
+        "options": [
+          "1",
+          "√2",
+          "2",
+          "1/√2"
+        ],
+        "correctAnswer": 1,
+        "explanation": "Orbital speed near the surface is v_o = √(GM/R) = √(gR). Escape speed is v_e = √(2GM/R) = √(2gR). Therefore v_e / v_o = √2."
+      },
+      {
+        "id": "phy_flu_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A large open tank is filled with water. A small hole is opened 5 m below the free surface. Take g = 10 m/s² and neglect viscosity. The speed of efflux, in m/s, is",
+        "correctAnswer": 10,
+        "explanation": "Torricelli's result from Bernoulli's equation, comparing the free surface (speed nearly zero, pressure atmospheric) with the hole (pressure atmospheric), gives v = √(2gh) = √(2 × 10 × 5) = √100 = 10 m/s."
+      },
+      {
+        "id": "phy_flu_02",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "In a hydraulic lift the area of the output piston is 10 times the area of the input piston. A force of 50 N on the input piston supports a load on the output piston of how many newtons? Neglect the weight of the pistons.",
+        "correctAnswer": 500,
+        "explanation": "Pascal's law: pressure is transmitted undiminished, so F1/A1 = F2/A2. Thus F2 = F1 (A2/A1) = 50 × 10 = 500 N."
+      }
+    ]
   },
   {
-    "chapter": "Dual Nature of Matter & Radiation",
+    "chapter": "Thermodynamics and Kinetic Theory",
     "subject": "physics",
-    "questions": []
+    "questions": [
+      {
+        "id": "phy_thm_01",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "A Carnot engine operates between 600 K and 300 K. Its efficiency is",
+        "options": [
+          "25%",
+          "50%",
+          "75%",
+          "100%"
+        ],
+        "correctAnswer": 1,
+        "explanation": "Carnot efficiency η = 1 − T_cold/T_hot = 1 − 300/600 = 1/2 = 50%. Temperatures must be in kelvin, which they already are. No real engine between the same temperatures can exceed this."
+      },
+      {
+        "id": "phy_ktg_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "The number of degrees of freedom of a diatomic ideal gas at room temperature, when vibrational modes are not excited, is",
+        "correctAnswer": 5,
+        "explanation": "A diatomic molecule has 3 translational degrees of freedom and 2 rotational degrees of freedom. At room temperature the vibrational mode of gases such as O2 and N2 is frozen, so f = 3 + 2 = 5. Then Cv = fR/2 = 5R/2 and γ = 1 + 2/f = 7/5."
+      },
+      {
+        "id": "phy_thm_02",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "For a fixed amount of ideal gas taken through an isothermal process, the change in internal energy is",
+        "options": [
+          "nRT ln(V2/V1)",
+          "zero",
+          "n Cv ΔT",
+          "n Cp ΔT"
+        ],
+        "correctAnswer": 1,
+        "explanation": "For an ideal gas, internal energy depends only on temperature (and the amount of gas). In an isothermal process ΔT = 0, so ΔU = 0. The heat absorbed equals the work done by the gas, nRT ln(V2/V1), but that is Q, not ΔU."
+      },
+      {
+        "id": "phy_ktg_02",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "The adiabatic index γ = Cp/Cv for a monatomic ideal gas is",
+        "options": [
+          "7/5",
+          "5/3",
+          "4/3",
+          "3/2"
+        ],
+        "correctAnswer": 1,
+        "explanation": "A monatomic gas has f = 3. Cv = fR/2 = 3R/2 and Cp = Cv + R = 5R/2. Therefore γ = Cp/Cv = (5R/2)/(3R/2) = 5/3. The value 7/5 belongs to a diatomic gas with f = 5."
+      }
+    ]
   },
   {
-    "chapter": "Atoms & Nuclei",
+    "chapter": "Electrostatics and Current Electricity",
     "subject": "physics",
-    "questions": []
+    "questions": [
+      {
+        "id": "phy_els_01",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "Charges +q and −q are placed a distance 2a apart. The electric potential at the midpoint of the line joining them is",
+        "options": [
+          "kq/a",
+          "0",
+          "2kq/a",
+          "kq/(2a)"
+        ],
+        "correctAnswer": 1,
+        "explanation": "The midpoint is at distance a from each charge. Potential is a scalar: V = kq/a + k(−q)/a = 0. The electric field there is not zero; the two fields point in the same direction and add. Do not confuse field with potential."
+      },
+      {
+        "id": "phy_els_02",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "Two capacitors of 6 μF each are connected in series. Their equivalent capacitance, in μF, is",
+        "correctAnswer": 3,
+        "explanation": "For series capacitors, 1/C = 1/C1 + 1/C2 = 1/6 + 1/6 = 1/3. Hence C = 3 μF. Series combination reduces capacitance; the parallel value would have been 12 μF."
+      },
+      {
+        "id": "phy_els_03",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A capacitor of capacitance 2 μF is charged to 10 V. The energy stored, in microjoules, is",
+        "correctAnswer": 100,
+        "explanation": "U = (1/2)CV² = (1/2)(2 × 10⁻⁶)(10)² = 10⁻⁴ J. Since 1 μJ = 10⁻⁶ J, U = 10⁻⁴ / 10⁻⁶ = 100 μJ."
+      },
+      {
+        "id": "phy_cur_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A 12 V battery is connected to a 2 Ω resistor in series with a parallel combination of two 4 Ω resistors. The current drawn from the battery, in amperes, is",
+        "imageUrl": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 420 200'><rect width='420' height='200' fill='%231E1E1E'/><text x='16' y='28' fill='%23F3ECDF' font-size='14' font-family='sans-serif'>12 V battery, then 2 ohm, then two 4 ohm branches</text><line x1='40' y1='70' x2='40' y2='160' stroke='%23E4A23A' stroke-width='3'/><text x='8' y='120' fill='%23F3ECDF' font-size='13' font-family='sans-serif'>12 V</text><line x1='40' y1='70' x2='140' y2='70' stroke='%23F3ECDF' stroke-width='2'/><rect x='140' y='58' width='54' height='24' fill='none' stroke='%23E4A23A' stroke-width='2'/><text x='152' y='75' fill='%23F3ECDF' font-size='13' font-family='sans-serif'>2 Ω</text><line x1='194' y1='70' x2='250' y2='70' stroke='%23F3ECDF' stroke-width='2'/><line x1='250' y1='70' x2='250' y2='150' stroke='%23F3ECDF' stroke-width='2'/><rect x='270' y='58' width='54' height='24' fill='none' stroke='%23E4A23A' stroke-width='2'/><text x='282' y='75' fill='%23F3ECDF' font-size='13' font-family='sans-serif'>4 Ω</text><line x1='250' y1='70' x2='270' y2='70' stroke='%23F3ECDF' stroke-width='2'/><line x1='324' y1='70' x2='380' y2='70' stroke='%23F3ECDF' stroke-width='2'/><rect x='270' y='138' width='54' height='24' fill='none' stroke='%23E4A23A' stroke-width='2'/><text x='282' y='155' fill='%23F3ECDF' font-size='13' font-family='sans-serif'>4 Ω</text><line x1='250' y1='150' x2='270' y2='150' stroke='%23F3ECDF' stroke-width='2'/><line x1='324' y1='150' x2='380' y2='150' stroke='%23F3ECDF' stroke-width='2'/><line x1='380' y1='70' x2='380' y2='150' stroke='%23F3ECDF' stroke-width='2'/><line x1='380' y1='110' x2='40' y2='160' stroke='%231E1E1E' stroke-width='1'/><line x1='40' y1='160' x2='380' y2='160' stroke='%23F3ECDF' stroke-width='2'/></svg>",
+        "correctAnswer": 3,
+        "explanation": "The two 4 Ω resistors are in parallel, so 1/Rp = 1/4 + 1/4 and Rp = 2 Ω. This is in series with 2 Ω, so Rtotal = 2 + 2 = 4 Ω. Current I = V/R = 12/4 = 3 A."
+      },
+      {
+        "id": "phy_cur_02",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "In a balanced Wheatstone bridge, P = 2 Ω, Q = 4 Ω and R = 3 Ω. The fourth resistance S, in ohms, is",
+        "correctAnswer": 6,
+        "explanation": "The balance condition is P/Q = R/S. So 2/4 = 3/S, which means 1/2 = 3/S, hence S = 6 Ω. At balance, the galvanometer branch carries no current."
+      }
+    ]
   },
   {
-    "chapter": "Semiconductors",
+    "chapter": "Magnetism and Electromagnetic Induction",
     "subject": "physics",
-    "questions": []
+    "questions": [
+      {
+        "id": "phy_mag_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A straight wire of length 0.4 m carries a current of 5 A perpendicular to a uniform magnetic field of 0.5 T. The magnitude of the force on the wire, in newtons, is",
+        "correctAnswer": 1,
+        "explanation": "F = I l B sinθ. Here θ = 90°, so sinθ = 1. F = 5 × 0.4 × 0.5 = 1 N. The direction is given by the right-hand rule and is perpendicular to both the current and the field."
+      },
+      {
+        "id": "phy_emi_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A conducting rod of length 2 m moves at 5 m/s perpendicular to its length and perpendicular to a uniform magnetic field of 0.2 T. The induced emf across the rod, in volts, is",
+        "correctAnswer": 2,
+        "explanation": "Motional emf = B l v when B, l and v are mutually perpendicular. emf = 0.2 × 2 × 5 = 2 V. The charges in the rod experience a magnetic force until the electric field balances it."
+      },
+      {
+        "id": "phy_mag_02",
+        "source": "JEE Main pattern",
+        "type": "mcq",
+        "question": "A charged particle moves perpendicular to a uniform magnetic field. Its time period does not depend on",
+        "options": [
+          "its speed",
+          "its charge",
+          "its mass",
+          "the magnetic field"
+        ],
+        "correctAnswer": 0,
+        "explanation": "The cyclotron period is T = 2πm/(qB). Speed and radius cancel because a faster particle moves on a larger circle, r = mv/(qB), and the extra path is exactly compensated. T depends on m, q and B, but not on speed."
+      },
+      {
+        "id": "phy_ac_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A series circuit has R = 3 Ω and inductive reactance XL = 4 Ω, with no capacitor. The rms supply voltage is 10 V. The rms current, in amperes, is",
+        "correctAnswer": 2,
+        "explanation": "Impedance Z = √(R² + XL²) = √(9 + 16) = √25 = 5 Ω. Irms = Vrms/Z = 10/5 = 2 A. The power factor is R/Z = 3/5, but the question asks only for current."
+      },
+      {
+        "id": "phy_ac_02",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "An ideal transformer has 100 turns in the primary and 500 turns in the secondary. The primary voltage is 220 V. The secondary voltage, in volts, is",
+        "correctAnswer": 1100,
+        "explanation": "For an ideal transformer, Vs/Vp = Ns/Np. Vs = 220 × (500/100) = 220 × 5 = 1100 V. This is a step-up transformer. Current steps down in the same ratio so that input power equals output power."
+      }
+    ]
+  },
+  {
+    "chapter": "Ray and Wave Optics",
+    "subject": "physics",
+    "questions": [
+      {
+        "id": "phy_opt_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "An object is placed 30 cm to the left of a thin convex lens of focal length 10 cm. Using the sign convention that distances to the left of the lens are negative, the image distance v, in cm, is",
+        "correctAnswer": 15,
+        "explanation": "Lens formula: 1/v − 1/u = 1/f. Here u = −30 cm and f = +10 cm. 1/v = 1/f + 1/u = 1/10 + 1/(−30) = 1/10 − 1/30 = 1/15. So v = +15 cm. The positive sign means a real image 15 cm to the right of the lens."
+      },
+      {
+        "id": "phy_opt_02",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "An object is placed at the centre of curvature of a concave mirror of focal length 15 cm. The magnitude of the image distance, in cm, is",
+        "correctAnswer": 30,
+        "explanation": "New Cartesian sign convention: f = −15 cm and the centre of curvature is at u = −30 cm. Mirror formula: 1/v + 1/u = 1/f. 1/v = 1/f − 1/u = −1/15 − 1/(−30) = −1/15 + 1/30 = −1/30. So v = −30 cm. The magnitude is 30 cm. The image is real, inverted, and the same size."
+      },
+      {
+        "id": "phy_opt_03",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "In Young's double-slit experiment, λ = 500 nm, the slit separation is 0.5 mm and the screen is 1 m away. The fringe width, in millimetres, is",
+        "imageUrl": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 420 200'><rect width='420' height='200' fill='%231E1E1E'/><text x='16' y='24' fill='%23F3ECDF' font-size='14' font-family='sans-serif'>Double slit: d = 0.5 mm, D = 1 m, λ = 500 nm</text><line x1='70' y1='40' x2='70' y2='170' stroke='%23F3ECDF' stroke-width='3'/><circle cx='70' cy='90' r='5' fill='%23E4A23A'/><circle cx='70' cy='120' r='5' fill='%23E4A23A'/><text x='82' y='86' fill='%23F3ECDF' font-size='13' font-family='sans-serif'>S1</text><text x='82' y='128' fill='%23F3ECDF' font-size='13' font-family='sans-serif'>S2</text><line x1='70' y1='90' x2='340' y2='70' stroke='%23E4A23A' stroke-width='1.5'/><line x1='70' y1='120' x2='340' y2='70' stroke='%23A39886' stroke-width='1.5'/><line x1='340' y1='40' x2='340' y2='170' stroke='%23F3ECDF' stroke-width='3'/><text x='300' y='190' fill='%23F3ECDF' font-size='13' font-family='sans-serif'>screen</text><text x='150' y='160' fill='%23A39886' font-size='13' font-family='sans-serif'>D = 1 m</text></svg>",
+        "correctAnswer": 1,
+        "explanation": "Fringe width β = λD/d. Convert units: λ = 5 × 10⁻⁷ m, d = 0.5 × 10⁻³ m = 5 × 10⁻⁴ m, D = 1 m. β = (5 × 10⁻⁷)(1)/(5 × 10⁻⁴) = 10⁻³ m = 1 mm."
+      },
+      {
+        "id": "phy_opt_04",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A ray in glass of refractive index √2 is incident on a plane glass-air surface. The critical angle, in degrees, is",
+        "correctAnswer": 45,
+        "explanation": "For glass to air, sin C = 1/μ = 1/√2. Therefore C = 45°. If the angle of incidence in glass exceeds 45°, the ray is totally reflected."
+      },
+      {
+        "id": "phy_opt_05",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "A thin prism of angle 4° is made of a material of refractive index 1.5. The angle of minimum deviation, in degrees, is",
+        "correctAnswer": 2,
+        "explanation": "For a thin prism, δ_m = (μ − 1)A = (1.5 − 1) × 4° = 0.5 × 4° = 2°. This small-angle result is the one used in JEE when A is only a few degrees."
+      }
+    ]
+  },
+  {
+    "chapter": "Modern Physics",
+    "subject": "physics",
+    "questions": [
+      {
+        "id": "phy_mod_01",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "Light of wavelength 310 nm falls on a metal of work function 2.0 eV. Take hc = 1240 eV·nm. The maximum kinetic energy of photoelectrons, in eV, is",
+        "correctAnswer": 2,
+        "explanation": "Photon energy E = hc/λ = 1240/310 = 4.0 eV. Einstein's equation: Kmax = E − φ = 4.0 − 2.0 = 2.0 eV. The stopping potential would be 2.0 V."
+      },
+      {
+        "id": "phy_mod_02",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "The wavelength, in nanometres, of a photon of energy 2.00 eV is (take hc = 1240 eV·nm)",
+        "correctAnswer": 620,
+        "explanation": "E = hc/λ, so λ = hc/E = 1240/2.00 = 620 nm. This is in the visible red region."
+      },
+      {
+        "id": "phy_mod_03",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "In the Bohr model of hydrogen, the ratio of the radius of the n = 2 orbit to the radius of the n = 1 orbit is",
+        "correctAnswer": 4,
+        "explanation": "Bohr radius of the nth orbit is r_n = n² a0. Therefore r2/r1 = (2)² / (1)² = 4. The speed in that orbit is half the ground-state speed, and the energy is −13.6/4 = −3.4 eV."
+      },
+      {
+        "id": "phy_mod_04",
+        "source": "JEE Main pattern",
+        "type": "integer",
+        "question": "The half-life of a radioactive sample is 3 hours. The time, in hours, after which its activity falls to 1/16 of the initial activity is",
+        "correctAnswer": 12,
+        "explanation": "Activity is proportional to the number of undecayed nuclei. A/A0 = (1/2)^n = 1/16, so n = 4 half-lives. Time t = 4 × 3 = 12 hours."
+      }
+    ]
   }
 ]
