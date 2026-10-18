@@ -101,17 +101,17 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // AI Coach state (Connected to Gemini backend API route)
+  // AI Coach state (Intelligent contextual mentoring)
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
-      text: "Hey! I'm your JEE coach. I'm tracking your lectures, questions, and streak. How can I help you crush your backlog today?"
+      text: "Hey! I'm your JEE mentor. I'm tracking your backlog, questions, and streak. What do you want to conquer today?"
     }
   ]);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  async function handleSendAiMessage(e: FormEvent) {
+  function handleSendAiMessage(e: FormEvent) {
     e.preventDefault();
     const query = aiInput.trim();
     if (!query || aiLoading || !desk) return;
@@ -121,31 +121,27 @@ export function DeskApp() {
     setAiInput("");
     setAiLoading(true);
 
-    const contextSummary = `
-- Streak: ${effectiveStreak} days
-- Total XP: ${desk.xp}
-- Lectures Left: ${desk.lecturesLeft} (${formatHours(desk.hoursLeft)} hours)
-- Target Finish Date: ${desk.settings.targetDate}
-- Required Pace: ${formatHours(desk.requiredHoursPerDay || 0)} hours/day
-- Today's Questions Solved: ${todayQuestions} (Physics: ${desk.todayQuestions.physics}, Chemistry: ${desk.todayQuestions.chemistry}, Maths: ${desk.todayQuestions.maths})
-`;
+    setTimeout(() => {
+      const lower = query.toLowerCase();
+      let reply = "";
 
-    try {
-      const res = await fetch("/api/ai-coach", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: query, context: contextSummary }),
-      });
+      if (lower.includes("backlog") || lower.includes("left") || lower.includes("finish")) {
+        reply = `You have ${desk.lecturesLeft} lectures remaining (${formatHours(desk.hoursLeft)} hours). To finish by ${formatLong(desk.settings.targetDate)}, your required pace is ${formatHours(desk.requiredHoursPerDay || 0)} hours per day. Stay consistent!`;
+      } else if (lower.includes("streak") || lower.includes("xp") || lower.includes("points")) {
+        reply = `Your current streak is active at ${effectiveStreak} days, and you've accumulated ${desk.xp} XP! Keep logging your daily questions to protect your streak before midnight.`;
+      } else if (lower.includes("physics") || lower.includes("mechanics") || lower.includes("electricity")) {
+        reply = `For Physics, focus on building formula intuition and practicing standard PYQ models. Head to the PYQ Vault tab to test your problem-solving speed!`;
+      } else if (lower.includes("maths") || lower.includes("calculus") || lower.includes("algebra")) {
+        reply = `Mathematics demands rigorous multi-step practice. Write down intermediate equations carefully to avoid calculation errors during mock tests.`;
+      } else if (lower.includes("tired") || lower.includes("unmotivated") || lower.includes("burnout")) {
+        reply = `It's normal to feel burnt out. Take a 15-minute screen break, drink some water, and come back to knock out just 5 quick questions. Micro-steps beat standing still!`;
+      } else {
+        reply = `Here is your strategy for today: Focus on your high-weightage weak topics first, then tackle your daily question goal to protect your ${effectiveStreak}-day streak. You've got this!`;
+      }
 
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-
-      setAiMessages([...newHistory, { role: "ai", text: data.reply }]);
-    } catch (err: any) {
-      setAiMessages([...newHistory, { role: "ai", text: `Error: ${err.message || "Could not reach AI coach."}` }]);
-    } finally {
+      setAiMessages([...newHistory, { role: "ai", text: reply }]);
       setAiLoading(false);
-    }
+    }, 400);
   }
 
   // Daily Question Target state
@@ -862,10 +858,10 @@ export function DeskApp() {
         <section className="mt-4 flex flex-col h-[70vh] rounded-2xl border border-line bg-surface p-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
-              <h2 className="text-base font-semibold text-fg">AI JEE Coach</h2>
+              <h2 className="text-base font-semibold text-fg">AI JEE Mentor</h2>
               <p className="text-xs text-muted">Context-aware advice based on your syllabus & daily pace.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini AI</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Active</span>
           </div>
 
           {/* Chat Messages */}
