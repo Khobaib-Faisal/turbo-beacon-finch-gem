@@ -162,6 +162,7 @@ export function DeskApp() {
   const user = useCurrentUser();
   const [desk, setDesk] = useState<Desk | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<SubjectId>("physics");
+  const currentChapterObj = PYQ_DATABASE.find((c) => c.chapter === selectedChapter);
   const [reward, setReward] = useState<Reward>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -539,19 +540,38 @@ export function DeskApp() {
       {activeTab === "pyq" && (
         <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
           
-          {/* LEVEL 1: CHAPTERS LIST */}
+ {/* LEVEL 1: SUBJECT SELECTOR + CHAPTERS LIST */}
           {!selectedChapter && (
             <div>
               <div className="flex items-center justify-between border-b border-line pb-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-fg">PYQ Chapters</h2>
-                  <p className="text-xs text-muted">Select a chapter to solve official JEE questions.</p>
+                  <h2 className="text-lg font-semibold text-fg">PYQ Vault</h2>
+                  <p className="text-xs text-muted">Select a subject and chapter to solve official JEE questions.</p>
                 </div>
                 <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Active Vault</span>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {PYQ_DATA.map((ch) => {
+              {/* Subject Tabs */}
+              <div className="mt-4 flex gap-2">
+                {(["physics", "chemistry", "maths"] as SubjectId[]).map((subj) => (
+                  <button
+                    key={subj}
+                    type="button"
+                    onClick={() => setSelectedSubject(subj)}
+                    className={`flex-1 rounded-xl py-2 text-xs font-semibold capitalize transition ${
+                      selectedSubject === subj
+                        ? "bg-accent text-accent-ink"
+                        : "border border-line bg-bg text-muted hover:border-muted hover:text-fg"
+                    }`}
+                  >
+                    {subj}
+                  </button>
+                ))}
+              </div>
+
+              {/* Filtered Chapter Cards */}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {PYQ_DATABASE.filter((ch) => ch.subject === selectedSubject).map((ch) => {
                   const solvedInChapter = ch.questions.filter((q) => solvedIds.includes(q.id)).length;
                   return (
                     <button
@@ -566,7 +586,7 @@ export function DeskApp() {
                     >
                       <div>
                         <p className="font-semibold text-fg text-sm">{ch.chapter}</p>
-                        <p className="text-xs text-muted uppercase mt-0.5">{ch.subject}</p>
+                        <p className="text-xs text-muted uppercase mt-0.5">{ch.subject} · {ch.questions.length} Questions</p>
                       </div>
                       <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
                         {solvedInChapter}/{ch.questions.length} Solved
