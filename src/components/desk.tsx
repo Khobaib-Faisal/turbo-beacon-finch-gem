@@ -161,6 +161,7 @@ function tracked(history: QuestionDay[], subject: SubjectId): number {
 export function DeskApp() {
   const user = useCurrentUser();
   const [desk, setDesk] = useState<Desk | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<SubjectId>("physics");
   const [reward, setReward] = useState<Reward>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
