@@ -101,7 +101,7 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // AI Coach state (Instant robust coaching based on real data)
+  // AI Coach state (Connected to Gemini backend API route)
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
@@ -111,7 +111,7 @@ export function DeskApp() {
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  function handleSendAiMessage(e: FormEvent) {
+  async function handleSendAiMessage(e: FormEvent) {
     e.preventDefault();
     const query = aiInput.trim();
     if (!query || aiLoading || !desk) return;
@@ -121,34 +121,31 @@ export function DeskApp() {
     setAiInput("");
     setAiLoading(true);
 
-    setTimeout(() => {
-      const lower = query.toLowerCase();
-      let reply = "";
+    const contextSummary = `
+- Streak: ${effectiveStreak} days
+- Total XP: ${desk.xp}
+- Lectures Left: ${desk.lecturesLeft} (${formatHours(desk.hoursLeft)} hours)
+- Target Finish Date: ${desk.settings.targetDate}
+- Required Pace: ${formatHours(desk.requiredHoursPerDay || 0)} hours/day
+- Today's Questions Solved: ${todayQuestions} (Physics: ${desk.todayQuestions.physics}, Chemistry: ${desk.todayQuestions.chemistry}, Maths: ${desk.todayQuestions.maths})
+`;
 
-      const studyTips = [
-        "Focus on high-weightage chapters first. If you're stuck on a tough module problem, break it down into basic formulas before jumping into advanced calculations.",
-        "Consistency beats intensity. Even if you're tired, clearing your daily question target keeps your momentum alive without burning you out.",
-        "When revising Physics, don't just read notes—re-solve your class examples and incorrect PYQs from scratch.",
-        "In Chemistry, make sure your Inorganic NCERT reading is active. Use short 15-minute blocks to revise block chemistry and reaction exceptions."
-      ];
+    try {
+      const res = await fetch("/api/ai-coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: query, context: contextSummary }),
+      });
 
-      if (lower.includes("backlog") || lower.includes("left") || lower.includes("finish")) {
-        reply = `You currently have ${desk.lecturesLeft} lectures remaining (${formatHours(desk.hoursLeft)} hours). To hit your target date of ${formatLong(desk.settings.targetDate)}, your required pace is ${formatHours(desk.requiredHoursPerDay || 0)} hours per day. Keep chipping away at them one by one!`;
-      } else if (lower.includes("streak") || lower.includes("xp") || lower.includes("points")) {
-        reply = `Your current streak is active at ${effectiveStreak} days, and you've earned a total of ${desk.xp} XP[cite: 34]! Protect your flame today by finishing a lecture or hitting your daily question target[cite: 34].`;
-      } else if (lower.includes("physics") || lower.includes("rotational") || lower.includes("electricity")) {
-        reply = `For Physics, focus heavily on conceptual clarity and standard model problems. Try solving a few problems in the PYQ Vault to test your formula application!`;
-      } else if (lower.includes("maths") || lower.includes("calculus") || lower.includes("algebra")) {
-        reply = `Mathematics requires rigorous practice. Don't skip steps while solving calculus or algebra problems; writing down intermediate steps prevents calculation errors in exams.`;
-      } else if (lower.includes("unmotivated") || lower.includes("tired") || lower.includes("burnout")) {
-        reply = `It's completely normal to feel fried. Take a 20-minute break, step away from the screen, and come back to knock out just 1 easy task or 5 simple questions. Micro-actions beat doing nothing!`;
-      } else {
-        reply = studyTips[Math.floor(Math.random() * studyTips.length)];
-      }
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
 
-      setAiMessages([...newHistory, { role: "ai", text: reply }]);
+      setAiMessages([...newHistory, { role: "ai", text: data.reply }]);
+    } catch (err: any) {
+      setAiMessages([...newHistory, { role: "ai", text: `Error: ${err.message || "Could not reach AI coach."}` }]);
+    } finally {
       setAiLoading(false);
-    }, 500);
+    }
   }
 
   // Daily Question Target state
@@ -868,7 +865,7 @@ export function DeskApp() {
               <h2 className="text-base font-semibold text-fg">AI JEE Coach</h2>
               <p className="text-xs text-muted">Context-aware advice based on your syllabus & daily pace.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">AI Ready</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini AI</span>
           </div>
 
           {/* Chat Messages */}
