@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   XCircle
 } from "lucide-react";
-import { GoogleGenAI } from "@google/genai";
 import { RedirectToSignIn, UserButton } from "@/lib/auth/gates";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import {
@@ -102,11 +101,11 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // AI Coach state (Powered directly by official GoogleGenAI SDK)
+  // AI Coach state (Powered by secure REST fetch to Gemini API)
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
-      text: "Hey! I'm your live Gemini JEE mentor. I'm tracking your real backlog, questions, and streak. What do you want to conquer today?"
+      text: "Hey! I'm your Gemini JEE mentor. I'm tracking your real backlog, questions, and streak. What do you want to conquer today?"
     }
   ]);
   const [aiInput, setAiInput] = useState("");
@@ -135,20 +134,27 @@ Student's Live JEE Dashboard State:
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error("VITE_GEMINI_API_KEY is missing from your environment variables.");
+        throw new Error("VITE_GEMINI_API_KEY is missing from Vercel environment variables.");
       }
 
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: query,
-        config: {
-          systemInstruction: `You are an expert, strict, and encouraging JEE preparation mentor. Analyze this student's real dashboard metrics and answer their questions dynamically and intelligently.\n\n${contextSummary}`,
-          temperature: 0.7,
-        },
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are an expert, strict, and encouraging JEE preparation mentor. Analyze this student's real dashboard metrics and answer their questions dynamically and intelligently.\n\n${contextSummary}\n\nStudent Question: ${query}`
+                }
+              ]
+            }
+          ]
+        })
       });
 
-      const replyText = response.text || "I couldn't generate a response. Try asking again!";
+      const data = await res.json();
+      const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate a response. Try asking again!";
       setAiMessages([...newHistory, { role: "ai", text: replyText }]);
     } catch (err: any) {
       setAiMessages([
@@ -877,7 +883,7 @@ Student's Live JEE Dashboard State:
               <h2 className="text-base font-semibold text-fg">Live Gemini AI Coach</h2>
               <p className="text-xs text-muted">Real-time dynamic mentorship based on your dashboard stats.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini 2.5</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini API</span>
           </div>
 
           {/* Chat Messages */}
