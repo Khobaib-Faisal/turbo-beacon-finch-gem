@@ -1,0 +1,23 @@
+[
+  { "chapter": "Some Basic Concepts of Chemistry (Mole Concept)", "subject": "chemistry", "questions": [] },
+  { "chapter": "Structure of Atom", "subject": "chemistry", "questions": [] },
+  { "chapter": "Classification of Elements & Periodicity", "subject": "chemistry", "questions": [] },
+  { "chapter": "Chemical Bonding & Molecular Structure", "subject": "chemistry", "questions": [] },
+  { "chapter": "Chemical Thermodynamics", "subject": "chemistry", "questions": [] },
+  { "chapter": "Chemical & Ionic Equilibrium", "subject": "chemistry", "questions": [] },
+  { "chapter": "Redox Reactions", "subject": "chemistry", "questions": [] },
+  { "chapter": "Solutions", "subject": "chemistry", "questions": [] },
+  { "chapter": "Electrochemistry", "subject": "chemistry", "questions": [] },
+  { "chapter": "Chemical Kinetics", "subject": "chemistry", "questions": [] },
+  { "chapter": "p-Block Elements", "subject": "chemistry", "questions": [] },
+  { "chapter": "d and f Block Elements", "subject": "chemistry", "questions": [] },
+  { "chapter": "Coordination Compounds", "subject": "chemistry", "questions": [] },
+  { "chapter": "General Organic Chemistry (GOC)", "subject": "chemistry", "questions": [] },
+  { "chapter": "Hydrocarbons", "subject": "chemistry", "questions": [] },
+  { "chapter": "Haloalkanes and Haloarenes", "subject": "chemistry", "questions": [] },
+  { "chapter": "Alcohols, Phenols and Ethers", "subject": "chemistry", "questions": [] },
+  { "chapter": "Aldehydes, Ketones and Carboxylic Acids", "subject": "chemistry", "questions": [] },
+  { "chapter": "Amines & Diazonium Salts", "subject": "chemistry", "questions": [] },
+  { "chapter": "Biomolecules", "subject": "chemistry", "questions": [] },
+  { "chapter": "Practical Chemistry", "subject": "chemistry", "questions": [] }
+]
