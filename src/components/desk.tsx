@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { RedirectToSignIn, UserButton } from "@/lib/auth/gates";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { PYQ_DATABASE, type ChapterPYQ, type QuestionItem } from "@/data/pyq-bank";
 import {
   addTodo,
   addWeakTopic,
