@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   XCircle
 } from "lucide-react";
+import { GoogleGenAI } from "@google/genai";
 import { RedirectToSignIn, UserButton } from "@/lib/auth/gates";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import {
@@ -101,17 +102,17 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // AI Coach state (Intelligent contextual mentoring)
+  // AI Coach state (Powered directly by official GoogleGenAI SDK)
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
-      text: "Hey! I'm your JEE mentor. I'm tracking your backlog, questions, and streak. What do you want to conquer today?"
+      text: "Hey! I'm your live Gemini JEE mentor. I'm tracking your real backlog, questions, and streak. What do you want to conquer today?"
     }
   ]);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  function handleSendAiMessage(e: FormEvent) {
+  async function handleSendAiMessage(e: FormEvent) {
     e.preventDefault();
     const query = aiInput.trim();
     if (!query || aiLoading || !desk) return;
@@ -121,27 +122,42 @@ export function DeskApp() {
     setAiInput("");
     setAiLoading(true);
 
-    setTimeout(() => {
-      const lower = query.toLowerCase();
-      let reply = "";
+    const contextSummary = `
+Student's Live JEE Dashboard State:
+- Streak: ${effectiveStreak} days active
+- Total XP: ${desk.xp}
+- Lectures Left: ${desk.lecturesLeft} (${formatHours(desk.hoursLeft)} hours)
+- Target Finish Date: ${desk.settings.targetDate}
+- Required Pace: ${formatHours(desk.requiredHoursPerDay || 0)} hours/day
+- Today's Solved Questions: ${todayQuestions} (Physics: ${desk.todayQuestions.physics}, Chemistry: ${desk.todayQuestions.chemistry}, Maths: ${desk.todayQuestions.maths})
+`;
 
-      if (lower.includes("backlog") || lower.includes("left") || lower.includes("finish")) {
-        reply = `You have ${desk.lecturesLeft} lectures remaining (${formatHours(desk.hoursLeft)} hours). To finish by ${formatLong(desk.settings.targetDate)}, your required pace is ${formatHours(desk.requiredHoursPerDay || 0)} hours per day. Stay consistent!`;
-      } else if (lower.includes("streak") || lower.includes("xp") || lower.includes("points")) {
-        reply = `Your current streak is active at ${effectiveStreak} days, and you've accumulated ${desk.xp} XP! Keep logging your daily questions to protect your streak before midnight.`;
-      } else if (lower.includes("physics") || lower.includes("mechanics") || lower.includes("electricity")) {
-        reply = `For Physics, focus on building formula intuition and practicing standard PYQ models. Head to the PYQ Vault tab to test your problem-solving speed!`;
-      } else if (lower.includes("maths") || lower.includes("calculus") || lower.includes("algebra")) {
-        reply = `Mathematics demands rigorous multi-step practice. Write down intermediate equations carefully to avoid calculation errors during mock tests.`;
-      } else if (lower.includes("tired") || lower.includes("unmotivated") || lower.includes("burnout")) {
-        reply = `It's normal to feel burnt out. Take a 15-minute screen break, drink some water, and come back to knock out just 5 quick questions. Micro-steps beat standing still!`;
-      } else {
-        reply = `Here is your strategy for today: Focus on your high-weightage weak topics first, then tackle your daily question goal to protect your ${effectiveStreak}-day streak. You've got this!`;
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("VITE_GEMINI_API_KEY is missing from your environment variables.");
       }
 
-      setAiMessages([...newHistory, { role: "ai", text: reply }]);
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: query,
+        config: {
+          systemInstruction: `You are an expert, strict, and encouraging JEE preparation mentor. Analyze this student's real dashboard metrics and answer their questions dynamically and intelligently.\n\n${contextSummary}`,
+          temperature: 0.7,
+        },
+      });
+
+      const replyText = response.text || "I couldn't generate a response. Try asking again!";
+      setAiMessages([...newHistory, { role: "ai", text: replyText }]);
+    } catch (err: any) {
+      setAiMessages([
+        ...newHistory, 
+        { role: "ai", text: `AI Error: ${err.message || "Failed to connect to Gemini."}` }
+      ]);
+    } finally {
       setAiLoading(false);
-    }, 400);
+    }
   }
 
   // Daily Question Target state
@@ -858,10 +874,10 @@ export function DeskApp() {
         <section className="mt-4 flex flex-col h-[70vh] rounded-2xl border border-line bg-surface p-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
-              <h2 className="text-base font-semibold text-fg">AI JEE Mentor</h2>
-              <p className="text-xs text-muted">Context-aware advice based on your syllabus & daily pace.</p>
+              <h2 className="text-base font-semibold text-fg">Live Gemini AI Coach</h2>
+              <p className="text-xs text-muted">Real-time dynamic mentorship based on your dashboard stats.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Active</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini 2.5</span>
           </div>
 
           {/* Chat Messages */}
@@ -885,7 +901,7 @@ export function DeskApp() {
             {aiLoading && (
               <div className="flex justify-start">
                 <div className="rounded-2xl border border-line bg-bg px-4 py-2 text-xs text-muted animate-pulse">
-                  Thinking...
+                  Gemini is thinking...
                 </div>
               </div>
             )}
@@ -897,7 +913,7 @@ export function DeskApp() {
               type="text"
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
-              placeholder="Ask about strategy, concepts, backlog, or weak topics..."
+              placeholder="Ask anything about JEE strategy, backlogs, or formulas..."
               className={`${field} min-h-10 text-xs mt-0`}
             />
             <button
