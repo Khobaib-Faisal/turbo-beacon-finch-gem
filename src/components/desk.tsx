@@ -46,6 +46,7 @@ export interface QuestionItem {
   source: string;
   type: "mcq" | "integer";
   question: string;
+  imageUrl?: string;
   options?: string[];
   correctAnswer: number;
   explanation: string;
@@ -124,14 +125,13 @@ export function DeskApp() {
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       
-      // Error Catch 1: Missing API Key
       if (!apiKey || apiKey === "undefined") {
-        setAiMessages([...newHistory, { role: "ai", text: "❌ SYSTEM ERROR: VITE_GEMINI_API_KEY is completely missing. Vercel did not inject it." }]);
+        setAiMessages([...newHistory, { role: "ai", text: "❌ SYSTEM ERROR: VITE_GEMINI_API_KEY is missing in Vercel." }]);
         setAiLoading(false);
         return;
       }
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -149,7 +149,6 @@ export function DeskApp() {
 
       const data = await res.json();
 
-      // Error Catch 2: Google rejects the request (Invalid Key, Quota, etc)
       if (!res.ok || data.error) {
         const errorMessage = data.error?.message || res.statusText || "Unknown Error";
         setAiMessages([...newHistory, { role: "ai", text: `❌ GOOGLE API ERROR: ${errorMessage}` }]);
@@ -157,12 +156,11 @@ export function DeskApp() {
         return;
       }
 
-      // Success: Real AI Response
       const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (replyText) {
         setAiMessages([...newHistory, { role: "ai", text: replyText }]);
       } else {
-        setAiMessages([...newHistory, { role: "ai", text: `❌ EMPTY RESPONSE FROM GOOGLE. Raw Data: ${JSON.stringify(data)}` }]);
+        setAiMessages([...newHistory, { role: "ai", text: "No text returned." }]);
       }
 
     } catch (err: any) {
@@ -719,6 +717,15 @@ export function DeskApp() {
               <div className="mt-5 rounded-xl border border-line bg-bg p-5">
                 <p className="text-sm font-medium leading-relaxed text-fg">{activeQuestion.question}</p>
 
+                {/* IMAGE DISPLAY BLOCK */}
+                {activeQuestion.imageUrl && (
+                  <img 
+                    src={activeQuestion.imageUrl} 
+                    alt="Question Diagram" 
+                    className="mt-4 max-h-64 max-w-full rounded-lg border border-line object-contain"
+                  />
+                )}
+
                 {activeQuestion.type === "mcq" && activeQuestion.options ? (
                   <div className="mt-5 space-y-2.5">
                     {activeQuestion.options.map((opt, optIdx) => {
@@ -886,7 +893,7 @@ export function DeskApp() {
           <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
               <h2 className="text-base font-semibold text-fg">AI JEE Mentor</h2>
-              <p className="text-xs text-muted">Powered by real Gemini 1.5 Flash.</p>
+              <p className="text-xs text-muted">Powered by real Gemini 2.5 Flash.</p>
             </div>
             <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Live API</span>
           </div>
