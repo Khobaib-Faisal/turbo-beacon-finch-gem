@@ -118,6 +118,7 @@
     "subject": "physics",
     "questions": []
   },
+ [
   {
     "chapter": "Current Electricity",
     "subject": "physics",
@@ -127,7 +128,7 @@
         "source": "JEE Main 2023",
         "type": "mcq",
         "question": "For the given circuit diagram below, determine the equivalent resistance between terminals A and B:",
-        "imageUrl": "imageUrl": "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600",
+        "imageUrl": "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600",
         "options": [
           "R / 2",
           "R",
@@ -135,7 +136,7 @@
           "4R"
         ],
         "correctAnswer": 1,
-        "explanation": "Since R1/R2 = R3/R4, the bridge is balanced. No current flows through the central galvanometer branch. The two upper and two lower resistors are in series (2R and 2R) and both branches are in parallel, giving Req = (2R * 2R) / (2R + 2R) = R."
+        "explanation": "Since the bridge is balanced, no current flows through the central branch. The two upper and two lower resistors are in series (2R and 2R) and both branches are in parallel, giving Req = (2R * 2R) / (2R + 2R) = R."
       },
       {
         "id": "phy_curr_02",
@@ -143,10 +144,11 @@
         "type": "integer",
         "question": "A cylindrical wire of radius 1 mm and length 2 m carries a uniform current density of 4 × 10^5 A/m^2. Calculate the total current in the wire (approximate integer in mA, take π = 3.14):",
         "correctAnswer": 1256,
-        "explanation": "Current I = J * A = J * (π * r^2) = (4 * 10^5) * (3.14 * (10^-3)^2) = 4 * 10^5 * 3.14 * 10^-6 = 1.256 A = 1256 mA."
+        "explanation": "Current I = J * A = J * (π * r^2) = (4 * 10^5) * (3.14 * (10^-3)^2) = 1.256 A = 1256 mA."
       }
     ]
-  },
+  }
+]
   {
     "chapter": "Magnetic Effects of Current",
     "subject": "physics",
