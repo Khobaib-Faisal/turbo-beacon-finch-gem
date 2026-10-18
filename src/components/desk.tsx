@@ -101,7 +101,7 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // AI Coach state
+  // AI Coach state (Connected to Gemini API)
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
@@ -111,7 +111,7 @@ export function DeskApp() {
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  function handleSendAiMessage(e: FormEvent) {
+  async function handleSendAiMessage(e: FormEvent) {
     e.preventDefault();
     const query = aiInput.trim();
     if (!query || aiLoading || !desk) return;
@@ -121,21 +121,43 @@ export function DeskApp() {
     setAiInput("");
     setAiLoading(true);
 
-    setTimeout(() => {
-      let reply = "Keep pushing! Focus on your weakest topics and clear your daily question target.";
-      const lower = query.toLowerCase();
+    const contextSummary = `
+Student's live JEE dashboard data:
+- Streak: ${effectiveStreak} days active
+- Total XP: ${desk.xp}
+- Lectures Left: ${desk.lecturesLeft} (${formatHours(desk.hoursLeft)} hours)
+- Target Finish Date: ${desk.settings.targetDate}
+- Required Pace: ${formatHours(desk.requiredHoursPerDay || 0)} hours/day
+- Today's Solved Questions: ${todayQuestions} (Physics: ${desk.todayQuestions.physics}, Chemistry: ${desk.todayQuestions.chemistry}, Maths: ${desk.todayQuestions.maths})
+`;
 
-      if (lower.includes("backlog") || lower.includes("left")) {
-        reply = `You have ${desk.lecturesLeft} lectures remaining (${formatHours(desk.hoursLeft)} hours). To finish by ${formatLong(desk.settings.targetDate)}, stick to your target of ${formatHours(desk.requiredHoursPerDay || 0)} hours per day. You've got this!`;
-      } else if (lower.includes("streak") || lower.includes("xp")) {
-        reply = `Your current streak is active, and you've earned ${desk.xp} XP! Keep logging your daily questions to protect your flame before midnight.`;
-      } else if (lower.includes("physics") || lower.includes("chemistry") || lower.includes("maths")) {
-        reply = `Make sure to balance your problem practice across subjects today. Use the PYQ Vault to test chapter concepts and claim extra XP!`;
-      }
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are an expert, strict, and encouraging JEE preparation mentor. Analyze this student's data and answer their question contextually and dynamically.\n\n${contextSummary}\n\nStudent's Question: ${query}`
+                }
+              ]
+            }
+          ]
+        })
+      });
 
-      setAiMessages([...newHistory, { role: "ai", text: reply }]);
+      const data = await response.json();
+      const aiReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't process that right now. Try asking again!";
+
+      setAiMessages([...newHistory, { role: "ai", text: aiReply }]);
+    } catch {
+      setAiMessages([...newHistory, { role: "ai", text: "Network error connecting to Gemini AI. Check your VITE_GEMINI_API_KEY environment variable on Vercel." }]);
+    } finally {
       setAiLoading(false);
-    }, 600);
+    }
   }
 
   // Daily Question Target state
@@ -855,7 +877,7 @@ export function DeskApp() {
               <h2 className="text-base font-semibold text-fg">AI JEE Coach</h2>
               <p className="text-xs text-muted">Context-aware advice based on your syllabus & daily pace.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">AI Ready</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini 1.5</span>
           </div>
 
           {/* Chat Messages */}
@@ -1373,7 +1395,6 @@ function History({ history, today }: { history: QuestionDay[]; today: string }) 
                     {day.day === today ? " · today" : ""}
                   </td>
                   <td className="py-1.5 pr-2 tabular-nums">{day.physics}</td>
-                  <td className="py-1.5 pr-2 tabular-nxums">{day.cells}</td>
                   <td className="py-1.5 pr-2 tabular-nums">{day.chemistry}</td>
                   <td className="py-1.5 pr-2 tabular-nums">{day.maths}</td>
                   <td className="py-1.5 tabular-nums">{day.physics + day.chemistry + day.maths}</td>
