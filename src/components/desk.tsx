@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { RedirectToSignIn, UserButton } from "@/lib/auth/gates";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
-import { PYQ_DATABASE, type ChapterPYQ, type QuestionItem } from "@/data/pyq-bank";
 import {
   addTodo,
   addWeakTopic,
@@ -48,7 +47,7 @@ export interface QuestionItem {
   type: "mcq" | "integer";
   question: string;
   options?: string[];
-  correctAnswer: string | number;
+  correctAnswer: number;
   explanation: string;
 }
 
@@ -57,72 +56,6 @@ export interface ChapterPYQ {
   subject: SubjectId;
   questions: QuestionItem[];
 }
-
-const PYQ_DATA: ChapterPYQ[] = [
-  {
-    chapter: "Current Electricity",
-    subject: "physics",
-    questions: [
-      {
-        id: "ce-pyq-1",
-        source: "JEE Main 2024",
-        type: "mcq",
-        question: "A wire of resistance 16 Ω is elongated to double its original length by stretching it uniformly. The resistance of the elongated wire is:",
-        options: ["32 Ω", "64 Ω", "4 Ω", "16 Ω"],
-        correctAnswer: 1,
-        explanation: "Volume remains constant (V = A * L). When length is doubled (L' = 2L), area becomes half (A' = A/2). Since R = ρL/A, new resistance R' = ρ(2L)/(A/2) = 4R = 4 * 16 = 64 Ω."
-      },
-      {
-        id: "ce-pyq-2",
-        source: "JEE Main 2023",
-        type: "integer",
-        question: "In a meter bridge experiment, null point is found at 40 cm from end A when a known resistance of 6 Ω is connected in the right gap. The value of unknown resistance in the left gap is ____ Ω.",
-        correctAnswer: 4,
-        explanation: "Using Wheatstone condition: R / S = l1 / (100 - l1) => R / 6 = 40 / 60 = 2 / 3 => R = 4 Ω."
-      },
-      {
-        id: "ce-pyq-3",
-        source: "JEE Advanced 2023",
-        type: "mcq",
-        question: "A potentiometer wire of length 10 m and resistance 20 Ω is connected in series with a battery of emf 2.5 V and internal resistance 5 Ω. The potential gradient along the wire is:",
-        options: ["0.2 V/m", "0.25 V/m", "0.15 V/m", "0.1 V/m"],
-        correctAnswer: 0,
-        explanation: "Current through wire I = E / (R_wire + r) = 2.5 / (20 + 5) = 2.5 / 25 = 0.1 A. Potential drop across wire V_wire = I * R_wire = 0.1 * 20 = 2 V. Potential gradient k = V_wire / L = 2 / 10 = 0.2 V/m."
-      },
-      {
-        id: "ce-pyq-4",
-        source: "JEE Main 2022",
-        type: "integer",
-        question: "Twelve identical wires, each of resistance 6 Ω, are connected to form a skeleton cube. The equivalent resistance between two diagonally opposite corners of the cube is ____ Ω.",
-        correctAnswer: 5,
-        explanation: "For a cube of equal resistors of value R, equivalent resistance between space diagonals is (5/6)R. Here R = 6 Ω, so R_eq = (5/6) * 6 = 5 Ω."
-      }
-    ]
-  },
-  {
-    chapter: "Ray Optics",
-    subject: "physics",
-    questions: [
-      {
-        id: "ro-pyq-1",
-        source: "JEE Main 2024",
-        type: "mcq",
-        question: "A convex lens of focal length 20 cm made of glass (μ = 1.5) is immersed in water (μ = 4/3). The focal length of the lens in water is:",
-        options: ["40 cm", "60 cm", "80 cm", "100 cm"],
-        correctAnswer: 2,
-        explanation: "1/f_air = (1.5 - 1)(1/R1 - 1/R2) = 0.5 * K = 1/20 => K = 1/10. In water: 1/f_water = [(1.5 / (4/3)) - 1] * K = (9/8 - 1) * (1/10) = 1/80 => f_water = 80 cm."
-      },
-      {
-        id: "ro-pyq-2",
-        source: "JEE Advanced 2022",
-        type: "integer",
-        question: "A prism of angle 60° has a refractive index of √3. The angle of minimum deviation for this prism is ____ degrees.",
-        correctAnswer: 60,
-        explanation: "μ = sin((A + δ_m)/2) / sin(A/2) => √3 = sin((60° + δ_m)/2) / sin(30°) => sin((60° + δ_m)/2) = √3 / 2 => (60° + δ_m)/2 = 60° => δ_m = 60°."
-      }
-    ]
-  }
-];
 
 const SUBJECTS: Array<{ id: SubjectId; name: string; note: string }> = [
   { id: "physics", name: "Physics", note: "Average length 2.15 hours." },
@@ -168,8 +101,7 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // Subject and Target States
-  const [selectedSubject, setSelectedSubject] = useState<SubjectId>("physics");
+  // Daily Question Target state
   const [questionTarget, setQuestionTarget] = useState<number>(() => {
     if (typeof window === "undefined") return 15;
     const saved = localStorage.getItem("jee_question_streak_target");
@@ -177,7 +109,7 @@ export function DeskApp() {
   });
   const [targetInput, setTargetInput] = useState<string>(() => String(questionTarget));
 
-  // Solved Question IDs
+  // Solved Question IDs set (ensures 1-time XP reward)
   const [solvedIds, setSolvedIds] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -188,15 +120,17 @@ export function DeskApp() {
     }
   });
 
-  // PYQ Section Navigation States (MUST BE DECLARED BEFORE USING THEM)
+  // Dynamic Subject & Question Loader
+  const [selectedSubject, setSelectedSubject] = useState<SubjectId>("physics");
+  const [pyqChapters, setPyqChapters] = useState<ChapterPYQ[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+
+  // PYQ Section Navigation states
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState<number | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [integerInput, setIntegerInput] = useState<string>("");
   const [isChecked, setIsChecked] = useState(false);
-
-  // Now, and ONLY now, define currentChapterObj:
-  const currentChapterObj = PYQ_DATABASE.find((c) => c.chapter === selectedChapter);
 
   function commitTarget(valStr: string) {
     const parsed = parseInt(valStr.replace(/[^\d]/g, ""), 10);
@@ -210,6 +144,29 @@ export function DeskApp() {
       setTargetInput(String(questionTarget));
     }
   }
+
+  // Load subject questions from public JSON on demand
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingQuestions(true);
+    fetch(`/data/${selectedSubject}.json`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Not loaded");
+        return res.json();
+      })
+      .then((data: ChapterPYQ[]) => {
+        if (!cancelled) setPyqChapters(data);
+      })
+      .catch(() => {
+        if (!cancelled) setPyqChapters([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingQuestions(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSubject]);
 
   useEffect(() => {
     let cancelled = false;
@@ -262,7 +219,6 @@ export function DeskApp() {
     }
   }
 
-  // Answer checking logic with 1-time XP & Question Count Increment
   async function handleCheckAnswer(q: QuestionItem, subject: SubjectId) {
     setIsChecked(true);
     let correct = false;
@@ -274,14 +230,12 @@ export function DeskApp() {
 
     if (!correct) return;
 
-    // Check if previously solved
     const alreadyAwarded = solvedIds.includes(q.id);
     if (alreadyAwarded) {
       setReward({ xp: 0, label: "Correct! (XP already claimed)" });
       return;
     }
 
-    // New first-time solve: record ID and award XP & question count
     const nextSolved = [...solvedIds, q.id];
     setSolvedIds(nextSolved);
     if (typeof window !== "undefined") {
@@ -334,13 +288,14 @@ export function DeskApp() {
       ? desk.streak + 1
       : desk.streak;
 
+  const currentChapterObj = pyqChapters.find((c) => c.chapter === selectedChapter);
   const activeQuestion = currentChapterObj && activeQuestionIdx !== null 
     ? currentChapterObj.questions[activeQuestionIdx] 
     : null;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 pb-24 pt-4 sm:px-8">
-      {/* Sticky Header: Streak, XP & Target Settings */}
+      {/* Header */}
       <header className="sticky top-0 z-20 -mx-4 border-b border-line bg-bg/95 backdrop-blur px-4 py-3 sm:-mx-8 sm:px-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -453,7 +408,7 @@ export function DeskApp() {
         {error ? <p className="mt-2 text-xs text-accent">{error}</p> : null}
       </header>
 
-      {/* TAB 1: CORE TRACKER */}
+      {/* TAB 1: TRACKER */}
       {activeTab === "tracker" && (
         <div className="space-y-6 pt-4 animate-in fade-in duration-200">
           <section className="grid gap-3 sm:grid-cols-3">
@@ -541,7 +496,7 @@ export function DeskApp() {
       {activeTab === "pyq" && (
         <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
           
- {/* LEVEL 1: SUBJECT SELECTOR + CHAPTERS LIST */}
+          {/* LEVEL 1: SUBJECT SELECTOR + CHAPTERS */}
           {!selectedChapter && (
             <div>
               <div className="flex items-center justify-between border-b border-line pb-4">
@@ -570,32 +525,41 @@ export function DeskApp() {
                 ))}
               </div>
 
-              {/* Filtered Chapter Cards */}
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {PYQ_DATABASE.filter((ch) => ch.subject === selectedSubject).map((ch) => {
-                  const solvedInChapter = ch.questions.filter((q) => solvedIds.includes(q.id)).length;
-                  return (
-                    <button
-                      key={ch.chapter}
-                      type="button"
-                      onClick={() => {
-                        setSelectedChapter(ch.chapter);
-                        setActiveQuestionIdx(null);
-                        resetQuestionState();
-                      }}
-                      className="flex items-center justify-between rounded-xl border border-line bg-bg p-4 text-left transition hover:border-accent hover:bg-raised/40"
-                    >
-                      <div>
-                        <p className="font-semibold text-fg text-sm">{ch.chapter}</p>
-                        <p className="text-xs text-muted uppercase mt-0.5">{ch.subject} · {ch.questions.length} Questions</p>
-                      </div>
-                      <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
-                        {solvedInChapter}/{ch.questions.length} Solved
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              {loadingQuestions ? (
+                <div className="mt-8 text-center text-xs text-muted animate-pulse">
+                  Loading {selectedSubject} chapters...
+                </div>
+              ) : pyqChapters.length === 0 ? (
+                <div className="mt-8 rounded-xl border border-dashed border-line p-8 text-center">
+                  <p className="text-xs text-muted">No questions added yet for this subject. Paste question batches into /public/data/{selectedSubject}.json!</p>
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {pyqChapters.map((ch) => {
+                    const solvedInChapter = ch.questions.filter((q) => solvedIds.includes(q.id)).length;
+                    return (
+                      <button
+                        key={ch.chapter}
+                        type="button"
+                        onClick={() => {
+                          setSelectedChapter(ch.chapter);
+                          setActiveQuestionIdx(null);
+                          resetQuestionState();
+                        }}
+                        className="flex items-center justify-between rounded-xl border border-line bg-bg p-4 text-left transition hover:border-accent hover:bg-raised/40"
+                      >
+                        <div>
+                          <p className="font-semibold text-fg text-sm">{ch.chapter}</p>
+                          <p className="text-xs text-muted uppercase mt-0.5">{ch.subject} · {ch.questions.length} Questions</p>
+                        </div>
+                        <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
+                          {solvedInChapter}/{ch.questions.length} Solved
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -613,49 +577,54 @@ export function DeskApp() {
                 <span className="text-xs font-semibold text-fg">{selectedChapter}</span>
               </div>
 
-              <div className="mt-4 space-y-2">
-                {currentChapterObj.questions.map((q, idx) => {
-                  const isDone = solvedIds.includes(q.id);
-                  return (
-                    <button
-                      key={q.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveQuestionIdx(idx);
-                        resetQuestionState();
-                      }}
-                      className={`w-full flex items-center justify-between rounded-xl border p-3.5 text-left transition ${
-                        isDone ? "border-green-500/40 bg-green-500/5 hover:border-green-500" : "border-line bg-bg hover:border-accent"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`size-6 rounded-lg text-center leading-6 text-xs font-bold ${
-                          isDone ? "bg-green-500/20 text-green-400" : "bg-surface text-accent"
-                        }`}>
-                          {idx + 1}
-                        </span>
-                        <div>
-                          <p className="text-xs font-medium text-fg line-clamp-1">{q.question}</p>
-                          <p className="text-[10px] text-muted mt-0.5">
-                            {q.source} · {q.type === "mcq" ? "MCQ" : "Numerical"}
-                          </p>
+              {currentChapterObj.questions.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-dashed border-line p-8 text-center text-xs text-muted">
+                  No questions added in this chapter yet.
+                </div>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {currentChapterObj.questions.map((q, idx) => {
+                    const isDone = solvedIds.includes(q.id);
+                    return (
+                      <button
+                        key={q.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveQuestionIdx(idx);
+                          resetQuestionState();
+                        }}
+                        className={`w-full flex items-center justify-between rounded-xl border p-3.5 text-left transition ${
+                          isDone ? "border-green-500/40 bg-green-500/5 hover:border-green-500" : "border-line bg-bg hover:border-accent"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`size-6 rounded-lg text-center leading-6 text-xs font-bold ${
+                            isDone ? "bg-green-500/20 text-green-400" : "bg-surface text-accent"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <p className="text-xs font-medium text-fg line-clamp-1">{q.question}</p>
+                            <p className="text-[10px] text-muted mt-0.5">
+                              {q.source} · {q.type === "mcq" ? "MCQ" : "Numerical"}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isDone && <CheckCircle2 className="size-4 text-green-400 shrink-0" />}
-                        <ChevronRight className="size-4 text-muted shrink-0" />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                        <div className="flex items-center gap-2">
+                          {isDone && <CheckCircle2 className="size-4 text-green-400 shrink-0" />}
+                          <ChevronRight className="size-4 text-muted shrink-0" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
           {/* LEVEL 3: SINGLE QUESTION FOCUS VIEWER */}
           {selectedChapter && currentChapterObj && activeQuestion && activeQuestionIdx !== null && (
             <div>
-              {/* Top Bar: Back & Question Number */}
               <div className="flex items-center justify-between border-b border-line pb-4">
                 <button
                   type="button"
@@ -677,11 +646,9 @@ export function DeskApp() {
                 </div>
               </div>
 
-              {/* Question Text */}
               <div className="mt-5 rounded-xl border border-line bg-bg p-5">
                 <p className="text-sm font-medium leading-relaxed text-fg">{activeQuestion.question}</p>
 
-                {/* MCQ Options */}
                 {activeQuestion.type === "mcq" && activeQuestion.options ? (
                   <div className="mt-5 space-y-2.5">
                     {activeQuestion.options.map((opt, optIdx) => {
@@ -715,7 +682,6 @@ export function DeskApp() {
                     })}
                   </div>
                 ) : (
-                  /* Numerical Integer Box */
                   <div className="mt-5 space-y-3">
                     <label className="block text-xs text-muted font-medium">Enter Numerical Answer:</label>
                     <input
@@ -742,7 +708,6 @@ export function DeskApp() {
                   </div>
                 )}
 
-                {/* Step-by-step Solution */}
                 {isChecked && (
                   <div className="mt-5 rounded-xl border border-line bg-surface/70 p-4 text-xs text-muted leading-relaxed">
                     <p className="font-semibold text-fg mb-1">Step-by-step Solution:</p>
@@ -751,7 +716,6 @@ export function DeskApp() {
                 )}
               </div>
 
-              {/* Action & Navigation Buttons */}
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
@@ -859,7 +823,7 @@ export function DeskApp() {
           <div className="mt-4 rounded-xl border border-line bg-bg p-4">
             <p className="text-xs uppercase tracking-wider text-accent font-semibold">Today's Insight</p>
             <p className="mt-1 text-xs text-fg">
-              Try solving at least 2 questions in the <strong>PYQ Vault</strong> on <em>Current Electricity</em> today to keep your daily problem-solving active.
+              Keep your problem solving steady by doing questions across Physics, Chemistry, and Maths each day.
             </p>
           </div>
         </section>
@@ -962,7 +926,6 @@ function Plan({
           </p>
         )}
 
-        {/* Projected completion calculation based on actual pace */}
         {desk.projectedDate && desk.paceHoursPerDay !== null ? (
           <p className="mt-2 text-xs text-fg">
             At the pace you have actually kept ({formatHours(desk.paceHoursPerDay)} hours a day since you
