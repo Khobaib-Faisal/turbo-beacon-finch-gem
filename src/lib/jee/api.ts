@@ -181,8 +181,18 @@ async function readDesk(userId: string): Promise<Desk> {
   const logDays = await sql<{ day: string }>`
     select distinct day from lecture_logs where user_id = ${userId}
   `;
-  const days = logDays.map((row) => String(row.day).slice(0, 10));
-  const streak = streakFromDays(days, today);
+  // Extract all dates where at least 1 lecture was finished
+const lectureDates = logDays.map((row: any) => String(row.day).slice(0, 10));
+
+// Extract all dates where total questions met your daily target (default 10)
+// If row.physics + row.chemistry + row.maths >= 10, that day counts!
+const questionDates = (historyRows || questionDaysRows || [])
+  .filter((row: any) => ((row.physics || 0) + (row.chemistry || 0) + (row.maths || 0)) >= 10)
+  .map((row: any) => String(row.day).slice(0, 10));
+
+// Merge both sets of dates so ANY qualifying day keeps the streak alive
+const days = Array.from(new Set([...lectureDates, ...questionDates]));
+const streak = streakFromDays(days, today);
 
   const lastRows = await sql<{ subject: string; label: string }>`
     select b.subject, b.label
