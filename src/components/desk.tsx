@@ -7,11 +7,11 @@ import {
   BookOpen, 
   FileCheck2, 
   Bot,
-  Play,
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeft,
   CheckCircle2,
-  XCircle,
-  Timer,
-  Award
+  XCircle
 } from "lucide-react";
 import { RedirectToSignIn, UserButton } from "@/lib/auth/gates";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
@@ -41,89 +41,86 @@ const quiet =
 
 type ActiveTab = "tracker" | "pyq" | "books" | "tests" | "ai";
 
-interface Problem {
+export interface QuestionItem {
   id: string;
-  chapter: string;
-  source: string;
-  type: "PYQ" | "Book/Module";
-  tier: "Main" | "Advanced";
+  source: string; // e.g., "JEE Main 2024 (29 Jan Shift 1)" or "JEE Advanced 2023 Paper 1"
+  type: "mcq" | "integer";
   question: string;
-  options: string[];
-  correctIndex: number;
+  options?: string[]; // for MCQ
+  correctAnswer: string | number; // "B" or 4
   explanation: string;
 }
 
-const QUESTION_BANK: Problem[] = [
+export interface ChapterPYQ {
+  chapter: string;
+  subject: SubjectId;
+  questions: QuestionItem[];
+}
+
+// Curated Chapter Question Sets (Easily expandable anytime)
+const PYQ_DATA: ChapterPYQ[] = [
   {
-    id: "ce-1",
     chapter: "Current Electricity",
-    source: "JEE Main 2023",
-    type: "PYQ",
-    tier: "Main",
-    question: "A wire of resistance R is stretched uniformly such that its length increases by 10%. The percentage increase in its resistance is approximately:",
-    options: ["10%", "21%", "19%", "25%"],
-    correctIndex: 1,
-    explanation: "Volume remains constant (V = A * L). If length becomes 1.1 L, area becomes A / 1.1. New resistance R' = ρ(1.1 L) / (A / 1.1) = 1.21 R. Hence, increase is 21%."
+    subject: "physics",
+    questions: [
+      {
+        id: "ce-pyq-1",
+        source: "JEE Main 2024",
+        type: "mcq",
+        question: "A wire of resistance 16 Ω is elongated to double its original length by stretching it uniformly. The resistance of the elongated wire is:",
+        options: ["32 Ω", "64 Ω", "4 Ω", "16 Ω"],
+        correctAnswer: 1, // index 1 = "64 Ω"
+        explanation: "Volume remains constant (V = A * L). When length is doubled (L' = 2L), area becomes half (A' = A/2). Since R = ρL/A, new resistance R' = ρ(2L)/(A/2) = 4R = 4 * 16 = 64 Ω."
+      },
+      {
+        id: "ce-pyq-2",
+        source: "JEE Main 2023",
+        type: "integer",
+        question: "In a meter bridge experiment, null point is found at 40 cm from end A when a known resistance of 6 Ω is connected in the right gap. The value of unknown resistance in the left gap is ____ Ω.",
+        correctAnswer: 4,
+        explanation: "Using Wheatstone condition: R / S = l1 / (100 - l1) => R / 6 = 40 / 60 = 2 / 3 => R = 4 Ω."
+      },
+      {
+        id: "ce-pyq-3",
+        source: "JEE Advanced 2023",
+        type: "mcq",
+        question: "A potentiometer wire of length 10 m and resistance 20 Ω is connected in series with a battery of emf 2.5 V and internal resistance 5 Ω. The potential gradient along the wire is:",
+        options: ["0.2 V/m", "0.25 V/m", "0.15 V/m", "0.1 V/m"],
+        correctAnswer: 0, // index 0 = "0.2 V/m"
+        explanation: "Current through wire I = E / (R_wire + r) = 2.5 / (20 + 5) = 2.5 / 25 = 0.1 A. Potential drop across wire V_wire = I * R_wire = 0.1 * 20 = 2 V. Potential gradient k = V_wire / L = 2 / 10 = 0.2 V/m."
+      },
+      {
+        id: "ce-pyq-4",
+        source: "JEE Main 2022",
+        type: "integer",
+        question: "Twelve identical wires, each of resistance 6 Ω, are connected to form a skeleton cube. The equivalent resistance between two diagonally opposite corners of the cube is ____ Ω.",
+        correctAnswer: 5,
+        explanation: "For a cube of equal resistors of value R, equivalent resistance between space diagonals is (5/6)R. Here R = 6 Ω, so R_eq = (5/6) * 6 = 5 Ω."
+      }
+    ]
   },
   {
-    id: "ce-2",
-    chapter: "Current Electricity",
-    source: "JEE Adv PYQ",
-    type: "PYQ",
-    tier: "Advanced",
-    question: "In a potentiometer wire of length 10 m and resistance 20 Ω, a cell of emf 2 V and internal resistance 5 Ω gives a balance point at 6 m. If a shunt of 10 Ω is connected across the cell, the shift in the balance point is:",
-    options: ["1.5 m", "2.0 m", "1.0 m", "2.5 m"],
-    correctIndex: 0,
-    explanation: "Potential gradient k = V_wire / L. Terminal voltage changes from 2 V to V = E * R_shunt / (R_shunt + r) = 2 * 10 / 15 = 4/3 V. The new length L2 = 4 m. Shift = 6 m - 4 m = 2 m (or 1.5 m depending on primary circuit balance). Correct calculated shift is 1.5 m."
-  },
-  {
-    id: "ce-3",
-    chapter: "Current Electricity",
-    source: "Irodov / SBT Drill",
-    type: "Book/Module",
-    tier: "Advanced",
-    question: "A cylindrical conductor of length L and non-uniform conductivity σ(x) = σ0(1 + x/L) carries a steady current I. The electric field E(x) inside the conductor as a function of axial distance x from one end is:",
-    options: [
-      "I / (A σ0 (1 + x/L))",
-      "I (1 + x/L) / (A σ0)",
-      "I L / (A σ0 x)",
-      "I σ0 / (A (1 + x/L))"
-    ],
-    correctIndex: 0,
-    explanation: "Current density j = I / A. By Ohm's law in point form, j = σ(x) E(x). Thus E(x) = j / σ(x) = I / (A * σ0(1 + x/L))."
-  },
-  {
-    id: "ro-1",
     chapter: "Ray Optics",
-    source: "JEE Main 2024",
-    type: "PYQ",
-    tier: "Main",
-    question: "A convex lens of focal length 20 cm made of glass (μ = 1.5) is immersed in water (μ = 4/3). The new focal length of the lens in water is:",
-    options: ["40 cm", "60 cm", "80 cm", "100 cm"],
-    correctIndex: 2,
-    explanation: "Lens maker's formula: 1/f_air = (1.5 - 1)(1/R1 - 1/R2) = 0.5 K = 1/20 cm => K = 1/10. In water: 1/f_water = ((1.5 / (4/3)) - 1) * K = (9/8 - 1) * (1/10) = 1/80. Hence f_water = 80 cm."
-  },
-  {
-    id: "ro-2",
-    chapter: "Ray Optics",
-    source: "JEE Adv PYQ",
-    type: "PYQ",
-    tier: "Advanced",
-    question: "A ray enters a prism of angle A = 60° at minimum deviation condition. If the refractive index of the prism is √3, the angle of incidence i is:",
-    options: ["30°", "45°", "60°", "90°"],
-    correctIndex: 2,
-    explanation: "At minimum deviation r = A / 2 = 30°. By Snell's Law: 1 * sin(i) = μ * sin(r) = √3 * sin(30°) = √3 / 2. Therefore, i = 60°."
-  },
-  {
-    id: "ro-3",
-    chapter: "Ray Optics",
-    source: "SBT / Module Advanced",
-    type: "Book/Module",
-    tier: "Advanced",
-    question: "A silvered thin plano-convex lens of focal length f with silvered curved surface behaves as a concave mirror of effective focal length:",
-    options: ["f / (2μ)", "R / (2μ)", "f / 2", "R / (2(μ - 1))"],
-    correctIndex: 1,
-    explanation: "Power of silvered lens P_eq = 2 P_lens + P_mirror. Using 1/f_lens = (μ - 1)/R and 1/f_mirror = 2/R, P_eq = 2(μ - 1)/R + 2/R = 2μ/R. Effective focal length F = R / (2μ)."
+    subject: "physics",
+    questions: [
+      {
+        id: "ro-pyq-1",
+        source: "JEE Main 2024",
+        type: "mcq",
+        question: "A convex lens of focal length 20 cm made of glass (μ = 1.5) is immersed in water (μ = 4/3). The focal length of the lens in water is:",
+        options: ["40 cm", "60 cm", "80 cm", "100 cm"],
+        correctAnswer: 2, // index 2 = "80 cm"
+        explanation: "1/f_air = (1.5 - 1)(1/R1 - 1/R2) = 0.5 * K = 1/20 => K = 1/10. In water: 1/f_water = [(1.5 / (4/3)) - 1] * K = (9/8 - 1) * (1/10) = 1/80 => f_water = 80 cm."
+      },
+      {
+        id: "ro-pyq-2",
+        source: "JEE Advanced 2022",
+        type: "integer",
+        question: "A prism of angle 60° has a refractive index of √3. The angle of minimum deviation for this prism is ____ degrees.",
+        correctAnswer: 60,
+        explanation: "μ = sin((A + δ_m)/2) / sin(A/2) => √3 = sin((60° + δ_m)/2) / sin(30°) => sin((60° + δ_m)/2) = √3 / 2 => (60° + δ_m)/2 = 60° => δ_m = 60°."
+      }
+    ]
   }
 ];
 
@@ -179,16 +176,12 @@ export function DeskApp() {
   });
   const [targetInput, setTargetInput] = useState<string>(() => String(questionTarget));
 
-  // Test Generator State
-  const [testConfig, setTestConfig] = useState<{ chapter: string; mix: "all" | "pyq" | "books"; count: number }>({
-    chapter: "Current Electricity",
-    mix: "all",
-    count: 3
-  });
-  const [activeTestQuestions, setActiveTestQuestions] = useState<Problem[]>([]);
-  const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
-  const [testSubmitted, setTestSubmitted] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(0);
+  // PYQ Section Navigation states
+  const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
+  const [activeQuestionIdx, setActiveQuestionIdx] = useState<number | null>(null);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [integerInput, setIntegerInput] = useState<string>("");
+  const [isChecked, setIsChecked] = useState(false);
 
   function commitTarget(valStr: string) {
     const parsed = parseInt(valStr.replace(/[^\d]/g, ""), 10);
@@ -235,64 +228,6 @@ export function DeskApp() {
     return () => window.clearTimeout(timer);
   }, [reward]);
 
-  // Test Countdown Timer
-  useEffect(() => {
-    if (activeTestQuestions.length === 0 || testSubmitted || timeRemaining <= 0) return;
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setTestSubmitted(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeTestQuestions, testSubmitted, timeRemaining]);
-
-  function startGeneratedTest() {
-    let pool = QUESTION_BANK.filter((p) => p.chapter === testConfig.chapter);
-    if (testConfig.mix === "pyq") pool = pool.filter((p) => p.type === "PYQ");
-    if (testConfig.mix === "books") pool = pool.filter((p) => p.type === "Book/Module");
-    
-    const selected = pool.slice(0, testConfig.count);
-    if (selected.length === 0) {
-      setError("No questions found matching your filter criteria.");
-      return;
-    }
-    setActiveTestQuestions(selected);
-    setUserAnswers({});
-    setTestSubmitted(false);
-    setTimeRemaining(selected.length * 180); // 3 minutes per question (standard JEE timing)
-  }
-
-  async function submitTestAndAwardXP() {
-    setTestSubmitted(true);
-    let correctCount = 0;
-    activeTestQuestions.forEach((q, idx) => {
-      if (userAnswers[idx] === q.correctIndex) correctCount++;
-    });
-
-    // Award +4 XP per correct answer + 5 bonus for completing test
-    const earnedXP = correctCount * 4 + 5;
-    if (earnedXP > 0 && desk) {
-      try {
-        const nextPhys = desk.todayQuestions.physics + correctCount;
-        await setTodayQuestions({ data: { subject: "physics", count: nextPhys } });
-        setDesk({
-          ...desk,
-          xp: desk.xp + earnedXP,
-          todayQuestions: { ...desk.todayQuestions, physics: nextPhys }
-        });
-        setReward({ xp: earnedXP, label: `Test Finished (${correctCount}/${activeTestQuestions.length} Correct)` });
-      } catch {
-        // Fallback UI update
-        setReward({ xp: earnedXP, label: `Test Finished (${correctCount}/${activeTestQuestions.length} Correct)` });
-      }
-    }
-  }
-
   async function run(action: () => Promise<DeskResult>) {
     setBusy(true);
     setError(null);
@@ -310,6 +245,39 @@ export function DeskApp() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Handle checking the single question answer
+  async function handleCheckAnswer(q: QuestionItem) {
+    setIsChecked(true);
+    let correct = false;
+    if (q.type === "mcq") {
+      correct = selectedOption === q.correctAnswer;
+    } else {
+      correct = Number(integerInput.trim()) === Number(q.correctAnswer);
+    }
+
+    if (correct && desk) {
+      const earnedXP = 4;
+      try {
+        const nextCount = desk.todayQuestions.physics + 1;
+        await setTodayQuestions({ data: { subject: "physics", count: nextCount } });
+        setDesk({
+          ...desk,
+          xp: desk.xp + earnedXP,
+          todayQuestions: { ...desk.todayQuestions, physics: nextCount }
+        });
+        setReward({ xp: earnedXP, label: "Correct PYQ (+4 XP)" });
+      } catch {
+        setReward({ xp: earnedXP, label: "Correct PYQ (+4 XP)" });
+      }
+    }
+  }
+
+  function resetQuestionState() {
+    setSelectedOption(null);
+    setIntegerInput("");
+    setIsChecked(false);
   }
 
   if (signedOut) return <RedirectToSignIn />;
@@ -331,6 +299,11 @@ export function DeskApp() {
     : questionsHit
       ? desk.streak + 1
       : desk.streak;
+
+  const currentChapterObj = PYQ_DATA.find((c) => c.chapter === selectedChapter);
+  const activeQuestion = currentChapterObj && activeQuestionIdx !== null 
+    ? currentChapterObj.questions[activeQuestionIdx] 
+    : null;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 pb-24 pt-4 sm:px-8">
@@ -377,7 +350,11 @@ export function DeskApp() {
         <nav className="mt-3 flex overflow-x-auto gap-1 border-t border-line/50 pt-2 no-scrollbar">
           <button
             type="button"
-            onClick={() => setActiveTab("tracker")}
+            onClick={() => {
+              setActiveTab("tracker");
+              setSelectedChapter(null);
+              setActiveQuestionIdx(null);
+            }}
             className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               activeTab === "tracker" ? "bg-accent text-accent-ink" : "text-muted hover:bg-raised hover:text-fg"
             }`}
@@ -387,17 +364,11 @@ export function DeskApp() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("tests")}
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-              activeTab === "tests" ? "bg-accent text-accent-ink" : "text-muted hover:bg-raised hover:text-fg"
-            }`}
-          >
-            <FileCheck2 className="size-3.5" />
-            Test Generator
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("pyq")}
+            onClick={() => {
+              setActiveTab("pyq");
+              setSelectedChapter(null);
+              setActiveQuestionIdx(null);
+            }}
             className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               activeTab === "pyq" ? "bg-accent text-accent-ink" : "text-muted hover:bg-raised hover:text-fg"
             }`}
@@ -414,6 +385,16 @@ export function DeskApp() {
           >
             <BookOpen className="size-3.5" />
             Top Books
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("tests")}
+            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              activeTab === "tests" ? "bg-accent text-accent-ink" : "text-muted hover:bg-raised hover:text-fg"
+            }`}
+          >
+            <FileCheck2 className="size-3.5" />
+            Test Generator
           </button>
           <button
             type="button"
@@ -519,183 +500,225 @@ export function DeskApp() {
         </div>
       )}
 
-      {/* TAB 2: TEST GENERATOR (PYQ + Books / Modules) */}
-      {activeTab === "tests" && (
+      {/* TAB 2: PYQ VAULT (Chapters -> Questions List -> Single Question Focus Viewer) */}
+      {activeTab === "pyq" && (
         <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+          
+          {/* LEVEL 1: CHAPTERS LIST */}
+          {!selectedChapter && (
             <div>
-              <h2 className="text-lg font-semibold text-fg">Custom Test Generator</h2>
-              <p className="text-xs text-muted">Generate timed tests combining recent JEE PYQs and standard book problems.</p>
-            </div>
-            {activeTestQuestions.length > 0 && !testSubmitted && (
-              <div className="flex items-center gap-2 rounded-xl bg-raised px-3 py-1.5 text-xs font-semibold text-accent">
-                <Timer className="size-4" />
-                <span>
-                  {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, "0")} left
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Test Setup Form */}
-          {activeTestQuestions.length === 0 ? (
-            <div className="mt-6 space-y-4 max-w-lg">
-              <div>
-                <label className="block text-xs font-medium text-muted">Select Chapter</label>
-                <select
-                  value={testConfig.chapter}
-                  onChange={(e) => setTestConfig({ ...testConfig, chapter: e.target.value })}
-                  className={`${field} text-xs`}
-                >
-                  <option value="Current Electricity">Current Electricity (Physics)</option>
-                  <option value="Ray Optics">Ray Optics (Physics)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-muted">Question Composition</label>
-                <div className="mt-1.5 grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTestConfig({ ...testConfig, mix: "all" })}
-                    className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                      testConfig.mix === "all" ? "border-accent bg-accent/10 text-accent" : "border-line bg-bg text-muted"
-                    }`}
-                  >
-                    Mix (PYQ + Books)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTestConfig({ ...testConfig, mix: "pyq" })}
-                    className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                      testConfig.mix === "pyq" ? "border-accent bg-accent/10 text-accent" : "border-line bg-bg text-muted"
-                    }`}
-                  >
-                    PYQs Only
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTestConfig({ ...testConfig, mix: "books" })}
-                    className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                      testConfig.mix === "books" ? "border-accent bg-accent/10 text-accent" : "border-line bg-bg text-muted"
-                    }`}
-                  >
-                    Irodov / SBT Only
-                  </button>
+              <div className="flex items-center justify-between border-b border-line pb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-fg">PYQ Chapters</h2>
+                  <p className="text-xs text-muted">Select a chapter to browse curated official JEE PYQs.</p>
                 </div>
+                <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Active Vault</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-muted">Number of Questions</label>
-                <div className="mt-1.5 flex gap-2">
-                  {[3, 5, 10].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => setTestConfig({ ...testConfig, count: num })}
-                      className={`rounded-xl border px-4 py-2 text-xs font-semibold transition ${
-                        testConfig.count === num ? "border-accent bg-accent/10 text-accent" : "border-line bg-bg text-muted"
-                      }`}
-                    >
-                      {num} Questions
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={startGeneratedTest}
-                className={`${primary} mt-4 flex items-center justify-center gap-2 w-full`}
-              >
-                <Play className="size-4" /> Start Generated Test
-              </button>
-            </div>
-          ) : (
-            /* Active Test Interface */
-            <div className="mt-6 space-y-6">
-              {activeTestQuestions.map((q, idx) => (
-                <div key={q.id} className="rounded-xl border border-line bg-bg p-4 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 pb-2">
-                    <span className="text-xs font-bold text-fg">Question {idx + 1}</span>
-                    <div className="flex gap-2">
-                      <span className="rounded bg-surface px-2 py-0.5 text-[10px] text-accent font-semibold">{q.source}</span>
-                      <span className="rounded bg-surface px-2 py-0.5 text-[10px] text-muted">{q.tier}</span>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {PYQ_DATA.map((ch) => (
+                  <button
+                    key={ch.chapter}
+                    type="button"
+                    onClick={() => {
+                      setSelectedChapter(ch.chapter);
+                      setActiveQuestionIdx(null);
+                      resetQuestionState();
+                    }}
+                    className="flex items-center justify-between rounded-xl border border-line bg-bg p-4 text-left transition hover:border-accent hover:bg-raised/40"
+                  >
+                    <div>
+                      <p className="font-semibold text-fg text-sm">{ch.chapter}</p>
+                      <p className="text-xs text-muted uppercase mt-0.5">{ch.subject}</p>
                     </div>
-                  </div>
+                    <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
+                      {ch.questions.length} PYQs
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-                  <p className="text-sm font-medium text-fg">{q.question}</p>
+          {/* LEVEL 2: QUESTION LIST FOR SELECTED CHAPTER */}
+          {selectedChapter && currentChapterObj && activeQuestionIdx === null && (
+            <div>
+              <div className="flex items-center justify-between border-b border-line pb-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedChapter(null)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted hover:text-fg"
+                >
+                  <ArrowLeft className="size-4" /> Back to Chapters
+                </button>
+                <span className="text-xs font-semibold text-fg">{selectedChapter}</span>
+              </div>
 
-                  <div className="space-y-2 pt-1">
-                    {q.options.map((opt, optIdx) => {
-                      const isSelected = userAnswers[idx] === optIdx;
-                      const isCorrect = q.correctIndex === optIdx;
-                      let btnStyle = "border-line bg-surface text-fg hover:border-muted";
+              <div className="mt-4 space-y-2">
+                {currentChapterObj.questions.map((q, idx) => (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveQuestionIdx(idx);
+                      resetQuestionState();
+                    }}
+                    className="w-full flex items-center justify-between rounded-xl border border-line bg-bg p-3.5 text-left transition hover:border-accent"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="size-6 rounded-lg bg-surface text-center leading-6 text-xs font-bold text-accent">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <p className="text-xs font-medium text-fg line-clamp-1">{q.question}</p>
+                        <p className="text-[10px] text-muted mt-0.5">{q.source} · {q.type === "mcq" ? "MCQ" : "Numerical"}</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="size-4 text-muted shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-                      if (testSubmitted) {
-                        if (isCorrect) btnStyle = "border-green-500 bg-green-500/10 text-green-400 font-semibold";
-                        else if (isSelected && !isCorrect) btnStyle = "border-red-500 bg-red-500/10 text-red-400";
+          {/* LEVEL 3: SINGLE QUESTION FOCUS VIEWER */}
+          {selectedChapter && currentChapterObj && activeQuestion && activeQuestionIdx !== null && (
+            <div>
+              {/* Top Bar: Back & Question Number */}
+              <div className="flex items-center justify-between border-b border-line pb-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveQuestionIdx(null);
+                    resetQuestionState();
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted hover:text-fg"
+                >
+                  <ArrowLeft className="size-4" /> All Questions
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="rounded bg-raised px-2 py-0.5 text-[11px] font-semibold text-accent">
+                    {activeQuestion.source}
+                  </span>
+                  <span className="text-xs text-muted tabular-nums">
+                    Q {activeQuestionIdx + 1} of {currentChapterObj.questions.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Question Text */}
+              <div className="mt-5 rounded-xl border border-line bg-bg p-5">
+                <p className="text-sm font-medium leading-relaxed text-fg">{activeQuestion.question}</p>
+
+                {/* Question Inputs: MCQ Options OR Numerical Box */}
+                {activeQuestion.type === "mcq" && activeQuestion.options ? (
+                  <div className="mt-5 space-y-2.5">
+                    {activeQuestion.options.map((opt, optIdx) => {
+                      const isSelected = selectedOption === optIdx;
+                      const isCorrect = Number(activeQuestion.correctAnswer) === optIdx;
+
+                      let style = "border-line bg-surface text-fg hover:border-muted";
+                      if (isChecked) {
+                        if (isCorrect) style = "border-green-500 bg-green-500/10 text-green-400 font-semibold";
+                        else if (isSelected && !isCorrect) style = "border-red-500 bg-red-500/10 text-red-400";
                       } else if (isSelected) {
-                        btnStyle = "border-accent bg-accent/15 text-accent font-semibold";
+                        style = "border-accent bg-accent/15 text-accent font-semibold";
                       }
 
                       return (
                         <button
                           key={optIdx}
                           type="button"
-                          disabled={testSubmitted}
-                          onClick={() => setUserAnswers({ ...userAnswers, [idx]: optIdx })}
-                          className={`w-full text-left rounded-xl border px-3.5 py-2.5 text-xs transition flex items-center justify-between ${btnStyle}`}
+                          disabled={isChecked}
+                          onClick={() => setSelectedOption(optIdx)}
+                          className={`w-full flex items-center justify-between rounded-xl border px-4 py-3 text-xs transition ${style}`}
                         >
-                          <span>{opt}</span>
-                          {testSubmitted && isCorrect && <CheckCircle2 className="size-4 text-green-400 shrink-0" />}
-                          {testSubmitted && isSelected && !isCorrect && <XCircle className="size-4 text-red-400 shrink-0" />}
+                          <span className="flex items-center gap-2.5">
+                            <span className="font-bold">{String.fromCharCode(65 + optIdx)}.</span>
+                            <span>{opt}</span>
+                          </span>
+                          {isChecked && isCorrect && <CheckCircle2 className="size-4 text-green-400 shrink-0" />}
+                          {isChecked && isSelected && !isCorrect && <XCircle className="size-4 text-red-400 shrink-0" />}
                         </button>
                       );
                     })}
                   </div>
-
-                  {testSubmitted && (
-                    <div className="mt-3 rounded-lg bg-surface/60 p-3 text-xs text-muted border border-line">
-                      <span className="font-semibold text-fg">Explanation: </span>
-                      {q.explanation}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              <div className="flex gap-3 pt-2">
-                {!testSubmitted ? (
-                  <button
-                    type="button"
-                    onClick={submitTestAndAwardXP}
-                    className={`${primary} flex-1`}
-                  >
-                    Submit Test & Claim XP
-                  </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTestQuestions([]);
-                      setUserAnswers({});
-                      setTestSubmitted(false);
-                    }}
-                    className={`${primary} flex-1 flex items-center justify-center gap-2`}
-                  >
-                    <Award className="size-4" /> Start Another Test
-                  </button>
+                  /* Numerical Integer Box */
+                  <div className="mt-5 space-y-3">
+                    <label className="block text-xs text-muted font-medium">Enter Numerical Answer:</label>
+                    <input
+                      type="text"
+                      disabled={isChecked}
+                      value={integerInput}
+                      placeholder="Type number..."
+                      onChange={(e) => setIntegerInput(e.target.value)}
+                      className={`${field} max-w-xs text-sm`}
+                    />
+                    {isChecked && (
+                      <div className="flex items-center gap-2 text-xs">
+                        {Number(integerInput.trim()) === Number(activeQuestion.correctAnswer) ? (
+                          <span className="flex items-center gap-1.5 text-green-400 font-semibold">
+                            <CheckCircle2 className="size-4" /> Correct Answer!
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5 text-red-400 font-semibold">
+                            <XCircle className="size-4" /> Incorrect. Correct is: {activeQuestion.correctAnswer}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
+
+                {/* Explanation Box */}
+                {isChecked && (
+                  <div className="mt-5 rounded-xl border border-line bg-surface/70 p-4 text-xs text-muted leading-relaxed">
+                    <p className="font-semibold text-fg mb-1">Step-by-step Solution:</p>
+                    {activeQuestion.explanation}
+                  </div>
+                )}
+              </div>
+
+              {/* Action & Navigation Buttons */}
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
+                  disabled={activeQuestionIdx === 0}
                   onClick={() => {
-                    setActiveTestQuestions([]);
-                    setUserAnswers({});
-                    setTestSubmitted(false);
+                    setActiveQuestionIdx((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+                    resetQuestionState();
                   }}
-                  className={`${quiet}`}
+                  className={`${quiet} inline-flex items-center gap-1.5 text-xs`}
                 >
-                  Exit Test
+                  <ChevronLeft className="size-4" /> Previous
+                </button>
+
+                {!isChecked ? (
+                  <button
+                    type="button"
+                    disabled={activeQuestion.type === "mcq" ? selectedOption === null : !integerInput.trim()}
+                    onClick={() => handleCheckAnswer(activeQuestion)}
+                    className={`${primary} text-xs px-6`}
+                  >
+                    Check Answer
+                  </button>
+                ) : (
+                  <span className="text-xs text-accent font-semibold">+4 XP Claimed</span>
+                )}
+
+                <button
+                  type="button"
+                  disabled={activeQuestionIdx === currentChapterObj.questions.length - 1}
+                  onClick={() => {
+                    setActiveQuestionIdx((prev) => 
+                      prev !== null && prev < currentChapterObj.questions.length - 1 ? prev + 1 : prev
+                    );
+                    resetQuestionState();
+                  }}
+                  className={`${quiet} inline-flex items-center gap-1.5 text-xs`}
+                >
+                  Next <ChevronRight className="size-4" />
                 </button>
               </div>
             </div>
@@ -703,80 +726,68 @@ export function DeskApp() {
         </section>
       )}
 
-      {/* TAB 3: PYQ VAULT */}
-      {activeTab === "pyq" && (
+      {/* TAB 3: TOP BOOKS */}
+      {activeTab === "books" && (
         <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-line pb-4">
             <div>
-              <h2 className="text-lg font-semibold text-fg">Top Curated PYQs</h2>
-              <p className="text-xs text-muted">2018–2025 JEE Main & Advanced official problems.</p>
+              <h2 className="text-lg font-semibold text-fg">Top Books Vault</h2>
+              <p className="text-xs text-muted">Irodov, SBT, and Black Book selected practice questions.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Active Vault</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">5 XP / Q</span>
           </div>
 
-          <div className="mt-4 space-y-3">
-            {QUESTION_BANK.filter((q) => q.type === "PYQ").map((q) => (
-              <div key={q.id} className="rounded-xl border border-line bg-bg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-accent">{q.chapter}</span>
-                  <span className="text-[11px] text-muted">{q.source}</span>
-                </div>
-                <p className="text-xs text-fg">{q.question}</p>
-                <div className="rounded bg-surface p-2 text-[11px] text-muted">
-                  <span className="font-semibold text-fg">Answer: </span> {q.options[q.correctIndex]}
-                </div>
-              </div>
-            ))}
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-line bg-bg p-4">
+              <h3 className="font-semibold text-fg text-sm">Physics</h3>
+              <p className="mt-1 text-xs text-muted">Irodov & SBT Select Problems</p>
+              <button type="button" className={`${quiet} mt-3 w-full text-xs`}>Open Problems</button>
+            </div>
+            <div className="rounded-xl border border-line bg-bg p-4">
+              <h3 className="font-semibold text-fg text-sm">Chemistry</h3>
+              <p className="mt-1 text-xs text-muted">MS Chouhan Advanced Organic</p>
+              <button type="button" className={`${quiet} mt-3 w-full text-xs`}>Open Problems</button>
+            </div>
+            <div className="rounded-xl border border-line bg-bg p-4">
+              <h3 className="font-semibold text-fg text-sm">Mathematics</h3>
+              <p className="mt-1 text-xs text-muted">Black Book (Vikas Gupta)</p>
+              <button type="button" className={`${quiet} mt-3 w-full text-xs`}>Open Problems</button>
+            </div>
           </div>
         </section>
       )}
 
-      {/* TAB 4: TOP BOOKS */}
-      {activeTab === "books" && (
+      {/* TAB 4: TEST GENERATOR */}
+      {activeTab === "tests" && (
         <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-line pb-4">
             <div>
-              <h2 className="text-lg font-semibold text-fg">Irodov, SBT & Black Book Problems</h2>
-              <p className="text-xs text-muted">Elite conceptual drills selected for JEE Advanced.</p>
+              <h2 className="text-lg font-semibold text-fg">Test Generator</h2>
+              <p className="text-xs text-muted">Timed mixed mock practice.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Elite Vault</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Coming Soon</span>
           </div>
-
-          <div className="mt-4 space-y-3">
-            {QUESTION_BANK.filter((q) => q.type === "Book/Module").map((q) => (
-              <div key={q.id} className="rounded-xl border border-line bg-bg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-accent">{q.chapter}</span>
-                  <span className="text-[11px] text-muted">{q.source}</span>
-                </div>
-                <p className="text-xs text-fg">{q.question}</p>
-                <div className="rounded bg-surface p-2 text-[11px] text-muted">
-                  <span className="font-semibold text-fg">Answer: </span> {q.options[q.correctIndex]}
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="mt-4 text-xs text-muted">
+            Configure full timed mocks across chapters once question banks are loaded.
+          </p>
         </section>
       )}
 
       {/* TAB 5: AI COACH */}
       {activeTab === "ai" && (
         <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-line pb-4">
             <div>
-              <h2 className="text-lg font-semibold text-fg">AI Preparation Coach</h2>
-              <p className="text-xs text-muted">Targeted pace forecasting and daily backlog insights.</p>
+              <h2 className="text-lg font-semibold text-fg">AI Coach</h2>
+              <p className="text-xs text-muted">Personalized JEE guidance and backlog analysis.</p>
             </div>
             <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Active Sync</span>
           </div>
-
-          <div className="mt-4 space-y-3">
-            <div className="rounded-xl border border-line bg-bg p-4">
-              <p className="text-xs uppercase tracking-wider text-accent font-semibold">Diagnostic Recommendation</p>
-              <p className="mt-1 text-xs text-fg">
-                Take a 3-question test on <strong>Current Electricity</strong> in the Test Generator tab. Hitting $\ge 2$ correct answers verifies Main formula fluency before advancing to RC circuit transient analysis.
-              </p>
-            </div>
+          <div className="mt-4 rounded-xl border border-line bg-bg p-4">
+            <p className="text-xs uppercase tracking-wider text-accent font-semibold">Today's Insight</p>
+            <p className="mt-1 text-xs text-fg">
+              Try solving at least 2 questions in the <strong>PYQ Vault</strong> on <em>Current Electricity</em> today to keep your daily problem-solving active.
+            </p>
           </div>
         </section>
       )}
