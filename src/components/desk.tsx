@@ -893,6 +893,8 @@ function Plan({
   busy: boolean;
   onSave: (settings: DeskSettings) => void;
 }) {
+  const late = desk.daysApart !== null && desk.daysApart > 0;
+  const early = desk.daysApart !== null && desk.daysApart < 0;
   const parts = SUBJECTS.map((subject) => {
     const left = desk.buckets
       .filter((bucket) => bucket.subject === subject.id)
@@ -925,11 +927,35 @@ function Plan({
         </label>
         {desk.studyDays > 0 && desk.requiredHoursPerDay !== null ? (
           <p className="mt-2 text-xs text-fg">
-            {desk.studyDays} days remaining counting today. Daily requirement:{" "}
+            {desk.studyDays} {desk.studyDays === 1 ? "day" : "days"} remaining counting today. Daily requirement:{" "}
             <span className="font-semibold tabular-nums">{formatHours(desk.requiredHoursPerDay)}</span> hours/day
             to finish on {formatLong(desk.settings.targetDate)}.
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-2 text-xs text-fg">
+            {desk.hoursLeft <= 0
+              ? "Nothing left on the lecture count."
+              : "That finish date is already past. Pick a later day."}
+          </p>
+        )}
+
+        {/* Projected completion calculation based on actual pace */}
+        {desk.projectedDate && desk.paceHoursPerDay !== null ? (
+          <p className="mt-2 text-xs text-fg">
+            At the pace you have actually kept ({formatHours(desk.paceHoursPerDay)} hours a day since you
+            started logging), the remaining syllabus ends{" "}
+            <span className="font-semibold text-accent">{formatLong(desk.projectedDate)}</span>
+            {late && desk.daysApart !== null
+              ? `, ${desk.daysApart} ${desk.daysApart === 1 ? "day" : "days"} after your target.`
+              : early && desk.daysApart !== null
+                ? `, ${Math.abs(desk.daysApart)} ${Math.abs(desk.daysApart) === 1 ? "day" : "days"} before your target.`
+                : "."}
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-muted">
+            Finish one lecture and this will also show the date your real pace lands on.
+          </p>
+        )}
       </div>
     </section>
   );
