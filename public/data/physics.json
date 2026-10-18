@@ -118,7 +118,6 @@
     "subject": "physics",
     "questions": []
   },
-[
   {
     "chapter": "Current Electricity",
     "subject": "physics",
@@ -147,8 +146,7 @@
         "explanation": "Current I = J * A = J * (π * r^2) = (4 * 10^5) * (3.14 * (10^-3)^2) = 4 * 10^5 * 3.14 * 10^-6 = 1.256 A = 1256 mA."
       }
     ]
-  }
-]
+  },
   {
     "chapter": "Magnetic Effects of Current",
     "subject": "physics",
