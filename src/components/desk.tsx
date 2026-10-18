@@ -40,6 +40,8 @@ const SUBJECTS: Array<{ id: SubjectId; name: string; note: string }> = [
   },
 ];
 
+const QUESTION_TARGET_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
+
 function messageOf(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === "object" && err && "message" in err && typeof err.message === "string") {
@@ -68,6 +70,20 @@ export function DeskApp() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
+
+  // Custom daily question target (stored locally so you can switch anytime)
+  const [questionTarget, setQuestionTarget] = useState<number>(() => {
+    if (typeof window === "undefined") return 15;
+    const saved = localStorage.getItem("jee_question_streak_target");
+    return saved ? Number(saved) : 15;
+  });
+
+  function updateQuestionTarget(val: number) {
+    setQuestionTarget(val);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("jee_question_streak_target", String(val));
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -132,6 +148,11 @@ export function DeskApp() {
   }
 
   const todayQuestions = desk.todayQuestions.physics + desk.todayQuestions.chemistry + desk.todayQuestions.maths;
+  
+  // Streak is safe if 1 lecture is done OR your question goal is hit
+  const questionsHit = todayQuestions >= questionTarget;
+  const streakAliveToday = desk.streakAliveToday || questionsHit;
+  const effectiveStreak = streakAliveToday && desk.streak === 0 ? 1 : desk.streak;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 pb-16 pt-4 sm:px-8">
@@ -146,11 +167,11 @@ export function DeskApp() {
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
           <p className="flex items-center gap-2 text-sm">
             <Flame
-              className={desk.streakAliveToday ? "size-4 text-accent" : "size-4 text-muted"}
+              className={streakAliveToday ? "size-4 text-accent" : "size-4 text-muted"}
               aria-hidden="true"
             />
             <span className="tabular-nums font-semibold">
-              {desk.streak === 1 ? "1 day streak" : `${desk.streak} day streak`}
+              {effectiveStreak === 1 ? "1 day streak" : `${effectiveStreak} day streak`}
             </span>
           </p>
           <p className="tabular-nums text-sm font-semibold text-accent">{desk.xp} XP</p>
@@ -159,13 +180,30 @@ export function DeskApp() {
             {desk.todayLectures === 1 ? "lecture" : "lectures"}
           </p>
         </div>
-        <p className="mt-1 text-sm text-muted">
-          {desk.streakAliveToday
-            ? "Streak is safe today. You finished a lecture."
-            : desk.streak > 0
-              ? "Finish one lecture today or the streak ends at midnight IST."
-              : "Finish one lecture today to start the streak."}
-        </p>
+
+        {/* Streak Status & Question Target Selector */}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-2">
+          <p className="text-sm text-muted">
+            {streakAliveToday
+              ? `Streak is safe today (${desk.todayLectures >= 1 ? "Lecture finished" : `${todayQuestions}/${questionTarget} questions done`}).`
+              : `Streak goal: Finish 1 lecture OR ${questionTarget} questions today.`}
+          </p>
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <span>Question target:</span>
+            <select
+              value={questionTarget}
+              onChange={(e) => updateQuestionTarget(Number(e.target.value))}
+              className="rounded-lg border border-line bg-surface px-2 py-1 text-xs font-medium text-fg outline-none"
+            >
+              {QUESTION_TARGET_OPTIONS.map((val) => (
+                <option key={val} value={val}>
+                  {val} Qs
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {reward ? (
           <p className="reward-pop mt-2 text-sm font-semibold text-accent" aria-live="polite">
             {reward.xp > 0 ? `+${reward.xp}` : reward.xp} XP · {reward.label}
@@ -254,9 +292,8 @@ export function DeskApp() {
       <History history={desk.history} today={desk.today} />
 
       <p className="mt-6 text-sm text-muted">
-        A lecture is 10 XP, including a one shot. A question is 1 XP. The streak needs one finished
-        lecture that day. Questions are today’s total for each subject, kept for every day you enter,
-        and the day resets at midnight IST. Correcting how many lectures are left does not give XP.
+        A lecture is 10 XP, including a one shot. A question is 1 XP. The streak continues with either
+        one finished lecture or hitting your chosen daily question target. Questions reset at midnight IST.
       </p>
     </main>
   );
