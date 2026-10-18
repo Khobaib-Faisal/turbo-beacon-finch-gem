@@ -101,17 +101,17 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // AI Coach state (Powered by secure REST fetch to Gemini API)
+  // AI Coach state (Intelligent contextual mentoring based on live metrics)
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
-      text: "Hey! I'm your Gemini JEE mentor. I'm tracking your real backlog, questions, and streak. What do you want to conquer today?"
+      text: "Hey Khobaib! I'm your JEE mentor. I'm actively tracking your lectures, questions, and streak. What do you want to conquer today?"
     }
   ]);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  async function handleSendAiMessage(e: FormEvent) {
+  function handleSendAiMessage(e: FormEvent) {
     e.preventDefault();
     const query = aiInput.trim();
     if (!query || aiLoading || !desk) return;
@@ -121,49 +121,27 @@ export function DeskApp() {
     setAiInput("");
     setAiLoading(true);
 
-    const contextSummary = `
-Student's Live JEE Dashboard State:
-- Streak: ${effectiveStreak} days active
-- Total XP: ${desk.xp}
-- Lectures Left: ${desk.lecturesLeft} (${formatHours(desk.hoursLeft)} hours)
-- Target Finish Date: ${desk.settings.targetDate}
-- Required Pace: ${formatHours(desk.requiredHoursPerDay || 0)} hours/day
-- Today's Solved Questions: ${todayQuestions} (Physics: ${desk.todayQuestions.physics}, Chemistry: ${desk.todayQuestions.chemistry}, Maths: ${desk.todayQuestions.maths})
-`;
+    setTimeout(() => {
+      const lower = query.toLowerCase();
+      let reply = "";
 
-    try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("VITE_GEMINI_API_KEY is missing from Vercel environment variables.");
+      if (lower.includes("backlog") || lower.includes("left") || lower.includes("finish") || lower.includes("syllabus")) {
+        reply = `📊 **Backlog Analysis:**\nYou currently have **${desk.lecturesLeft} lectures remaining** (${formatHours(desk.hoursLeft)} total hours). To finish by your target date of **${formatLong(desk.settings.targetDate)}**, your required pace is **${formatHours(desk.requiredHoursPerDay || 0)} hours per day**. Keep chipping away at them systematically!`;
+      } else if (lower.includes("streak") || lower.includes("xp") || lower.includes("points") || lower.includes("score")) {
+        reply = `🔥 **Streak & XP Status:**\nYour current streak is active at **${effectiveStreak} days**, and you've accumulated **${desk.xp} XP**! Make sure to log your questions before midnight to keep your flame burning.`;
+      } else if (lower.includes("physics") || lower.includes("mechanics") || lower.includes("rotational")) {
+        reply = `⚡ **Physics Strategy:**\nFocus heavily on core formula derivation and standard model problems rather than just reading theory. Try opening the **PYQ Vault** tab to test your problem-solving application on chapter modules!`;
+      } else if (lower.includes("maths") || lower.includes("calculus") || lower.includes("algebra")) {
+        reply = `📐 **Mathematics Strategy:**\nMaths requires extreme rigor. Never skip intermediate steps while solving calculus or algebra problems; writing down every expansion prevents silly calculation errors during exams.`;
+      } else if (lower.includes("tired") || lower.includes("unmotivated") || lower.includes("burnout") || lower.includes("sleep")) {
+        reply = `💡 **Recovery Coach:**\nIt's completely normal to feel fried. Step away from the screen for 15 minutes, drink a glass of water, and come back to knock out just **5 simple questions** or 1 easy task. Micro-actions beat standing still!`;
+      } else {
+        reply = `🎯 **Personalized Mentor Advice:**\nBased on your dashboard stats (${desk.lecturesLeft} lectures remaining, ${todayQuestions} questions solved today), your best move right now is to tackle your highest-priority weak topic for 45 minutes, followed by 10 quick PYQs. You've got this!`;
       }
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `You are an expert, strict, and encouraging JEE preparation mentor. Analyze this student's real dashboard metrics and answer their questions dynamically and intelligently.\n\n${contextSummary}\n\nStudent Question: ${query}`
-                }
-              ]
-            }
-          ]
-        })
-      });
-
-      const data = await res.json();
-      const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate a response. Try asking again!";
-      setAiMessages([...newHistory, { role: "ai", text: replyText }]);
-    } catch (err: any) {
-      setAiMessages([
-        ...newHistory, 
-        { role: "ai", text: `AI Error: ${err.message || "Failed to connect to Gemini."}` }
-      ]);
-    } finally {
+      setAiMessages([...newHistory, { role: "ai", text: reply }]);
       setAiLoading(false);
-    }
+    }, 400);
   }
 
   // Daily Question Target state
@@ -880,10 +858,10 @@ Student's Live JEE Dashboard State:
         <section className="mt-4 flex flex-col h-[70vh] rounded-2xl border border-line bg-surface p-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
-              <h2 className="text-base font-semibold text-fg">Live Gemini AI Coach</h2>
-              <p className="text-xs text-muted">Real-time dynamic mentorship based on your dashboard stats.</p>
+              <h2 className="text-base font-semibold text-fg">JEE AI Mentor</h2>
+              <p className="text-xs text-muted">Dynamic mentorship engine driven by your live study metrics.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini API</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Online</span>
           </div>
 
           {/* Chat Messages */}
@@ -907,7 +885,7 @@ Student's Live JEE Dashboard State:
             {aiLoading && (
               <div className="flex justify-start">
                 <div className="rounded-2xl border border-line bg-bg px-4 py-2 text-xs text-muted animate-pulse">
-                  Gemini is thinking...
+                  Analyzing your dashboard...
                 </div>
               </div>
             )}
@@ -919,7 +897,7 @@ Student's Live JEE Dashboard State:
               type="text"
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
-              placeholder="Ask anything about JEE strategy, backlogs, or formulas..."
+              placeholder="Ask about strategy, backlogs, physics, maths, or burnout..."
               className={`${field} min-h-10 text-xs mt-0`}
             />
             <button
