@@ -859,27 +859,63 @@ export function DeskApp() {
         </section>
       )}
 
-      {/* TAB 5: AI COACH */}
+{/* TAB 5: AI COACH */}
       {activeTab === "ai" && (
-        <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between border-b border-line pb-4">
+        <section className="mt-4 flex flex-col h-[70vh] rounded-2xl border border-line bg-surface p-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
-              <h2 className="text-lg font-semibold text-fg">AI Coach</h2>
-              <p className="text-xs text-muted">Personalized JEE guidance and backlog analysis.</p>
+              <h2 className="text-base font-semibold text-fg">AI JEE Coach</h2>
+              <p className="text-xs text-muted">Context-aware advice based on your syllabus & daily pace.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Active Sync</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Gemini 2.5</span>
           </div>
-          <div className="mt-4 rounded-xl border border-line bg-bg p-4">
-            <p className="text-xs uppercase tracking-wider text-accent font-semibold">Today's Insight</p>
-            <p className="mt-1 text-xs text-fg">
-              Keep your problem solving steady by doing questions across Physics, Chemistry, and Maths each day.
-            </p>
+
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto space-y-3 py-4 pr-1">
+            {aiMessages.map((msg, i) => (
+              <div
+                key={i}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${
+                    msg.role === "user"
+                      ? "bg-accent text-accent-ink font-medium"
+                      : "border border-line bg-bg text-fg whitespace-pre-wrap"
+                  }`}
+                >
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+            {aiLoading && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl border border-line bg-bg px-4 py-2 text-xs text-muted animate-pulse">
+                  Thinking...
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Message Input */}
+          <form onSubmit={handleSendAiMessage} className="flex gap-2 border-t border-line pt-3">
+            <input
+              type="text"
+              value={aiInput}
+              onChange={(e) => setAiInput(e.target.value)}
+              placeholder="Ask about strategy, concepts, backlog, or weak topics..."
+              className={`${field} min-h-10 text-xs mt-0`}
+            />
+            <button
+              type="submit"
+              disabled={aiLoading || !aiInput.trim()}
+              className={`${primary} min-h-10 text-xs px-5`}
+            >
+              Send
+            </button>
+          </form>
         </section>
       )}
-    </main>
-  );
-}
 
 function ExamCard({
   kicker,
