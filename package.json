@@ -77,6 +77,10 @@
     "vite": "^8.2.0",
     "zod": "^4.4.0",
     "zustand": "^5.0.0"
+    "katex": "^0.16.11",
+"react-markdown": "^9.0.1",
+"rehype-katex": "^7.0.0",
+"remark-math": "^6.0.0",
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
