@@ -157,7 +157,11 @@ export function DeskApp() {
   // Streak is safe if 1 lecture is done OR custom question target is reached
   const questionsHit = todayQuestions >= questionTarget;
   const streakAliveToday = desk.streakAliveToday || questionsHit;
-  const effectiveStreak = streakAliveToday && desk.streak === 0 ? 1 : desk.streak;
+  const effectiveStreak = desk.streakAliveToday
+  ? desk.streak
+  : questionsHit
+    ? desk.streak + 1
+    : desk.streak;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 pb-16 pt-4 sm:px-8">
