@@ -161,8 +161,6 @@ function tracked(history: QuestionDay[], subject: SubjectId): number {
 export function DeskApp() {
   const user = useCurrentUser();
   const [desk, setDesk] = useState<Desk | null>(null);
-  const [selectedSubject, setSelectedSubject] = useState<SubjectId>("physics");
-  const currentChapterObj = PYQ_DATABASE.find((c) => c.chapter === selectedChapter);
   const [reward, setReward] = useState<Reward>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,7 +168,8 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // Daily Question Target state
+  // Subject and Target States
+  const [selectedSubject, setSelectedSubject] = useState<SubjectId>("physics");
   const [questionTarget, setQuestionTarget] = useState<number>(() => {
     if (typeof window === "undefined") return 15;
     const saved = localStorage.getItem("jee_question_streak_target");
@@ -178,7 +177,7 @@ export function DeskApp() {
   });
   const [targetInput, setTargetInput] = useState<string>(() => String(questionTarget));
 
-  // Solved Question IDs set (ensures 1-time XP reward)
+  // Solved Question IDs
   const [solvedIds, setSolvedIds] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -189,12 +188,15 @@ export function DeskApp() {
     }
   });
 
-  // PYQ Section Navigation states
+  // PYQ Section Navigation States (MUST BE DECLARED BEFORE USING THEM)
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState<number | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [integerInput, setIntegerInput] = useState<string>("");
   const [isChecked, setIsChecked] = useState(false);
+
+  // Now, and ONLY now, define currentChapterObj:
+  const currentChapterObj = PYQ_DATABASE.find((c) => c.chapter === selectedChapter);
 
   function commitTarget(valStr: string) {
     const parsed = parseInt(valStr.replace(/[^\d]/g, ""), 10);
