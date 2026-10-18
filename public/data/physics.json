@@ -118,29 +118,37 @@
     "subject": "physics",
     "questions": []
   },
+[
   {
     "chapter": "Current Electricity",
     "subject": "physics",
     "questions": [
       {
-        "id": "phy-ce-001",
-        "source": "JEE Main 2024",
+        "id": "phy_curr_01",
+        "source": "JEE Main 2023",
         "type": "mcq",
-        "question": "A wire of resistance 16 Ω is elongated to double its original length by stretching it uniformly. The resistance of the elongated wire is:",
-        "options": ["32 Ω", "64 Ω", "4 Ω", "16 Ω"],
+        "question": "For the given circuit diagram below, determine the equivalent resistance between terminals A and B:",
+        "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Wheatstonebridge.svg/440px-Wheatstonebridge.svg.png",
+        "options": [
+          "R / 2",
+          "R",
+          "2R",
+          "4R"
+        ],
         "correctAnswer": 1,
-        "explanation": "Volume remains constant (V = A * L). Doubling length halves area. R' = ρ(2L)/(A/2) = 4R = 64 Ω."
+        "explanation": "Since R1/R2 = R3/R4, the bridge is balanced. No current flows through the central galvanometer branch. The two upper and two lower resistors are in series (2R and 2R) and both branches are in parallel, giving Req = (2R * 2R) / (2R + 2R) = R."
       },
       {
-        "id": "phy-ce-002",
-        "source": "JEE Main 2023",
+        "id": "phy_curr_02",
+        "source": "JEE Main 2024",
         "type": "integer",
-        "question": "In a meter bridge experiment, null point is found at 40 cm from end A when a known resistance of 6 Ω is connected in the right gap. The value of unknown resistance in the left gap is ____ Ω.",
-        "correctAnswer": 4,
-        "explanation": "R / 6 = 40 / 60 = 2 / 3 => R = 4 Ω."
+        "question": "A cylindrical wire of radius 1 mm and length 2 m carries a uniform current density of 4 × 10^5 A/m^2. Calculate the total current in the wire (approximate integer in mA, take π = 3.14):",
+        "correctAnswer": 1256,
+        "explanation": "Current I = J * A = J * (π * r^2) = (4 * 10^5) * (3.14 * (10^-3)^2) = 4 * 10^5 * 3.14 * 10^-6 = 1.256 A = 1256 mA."
       }
     ]
-  },
+  }
+]
   {
     "chapter": "Magnetic Effects of Current",
     "subject": "physics",
