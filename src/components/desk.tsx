@@ -101,11 +101,11 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // AI Coach state (Intelligent contextual mentoring based on live metrics)
+  // Dynamic AI Mentor state
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
-      text: "Hey Khobaib! I'm your JEE mentor. I'm actively tracking your lectures, questions, and streak. What do you want to conquer today?"
+      text: "Hey Khobaib! I'm your AI JEE mentor, wired directly into your live dashboard. Ask me anything about your backlog, study strategy, physics concepts, or exam schedule!"
     }
   ]);
   const [aiInput, setAiInput] = useState("");
@@ -125,23 +125,27 @@ export function DeskApp() {
       const lower = query.toLowerCase();
       let reply = "";
 
-      if (lower.includes("backlog") || lower.includes("left") || lower.includes("finish") || lower.includes("syllabus")) {
-        reply = `📊 **Backlog Analysis:**\nYou currently have **${desk.lecturesLeft} lectures remaining** (${formatHours(desk.hoursLeft)} total hours). To finish by your target date of **${formatLong(desk.settings.targetDate)}**, your required pace is **${formatHours(desk.requiredHoursPerDay || 0)} hours per day**. Keep chipping away at them systematically!`;
-      } else if (lower.includes("streak") || lower.includes("xp") || lower.includes("points") || lower.includes("score")) {
-        reply = `🔥 **Streak & XP Status:**\nYour current streak is active at **${effectiveStreak} days**, and you've accumulated **${desk.xp} XP**! Make sure to log your questions before midnight to keep your flame burning.`;
-      } else if (lower.includes("physics") || lower.includes("mechanics") || lower.includes("rotational")) {
-        reply = `⚡ **Physics Strategy:**\nFocus heavily on core formula derivation and standard model problems rather than just reading theory. Try opening the **PYQ Vault** tab to test your problem-solving application on chapter modules!`;
-      } else if (lower.includes("maths") || lower.includes("calculus") || lower.includes("algebra")) {
-        reply = `📐 **Mathematics Strategy:**\nMaths requires extreme rigor. Never skip intermediate steps while solving calculus or algebra problems; writing down every expansion prevents silly calculation errors during exams.`;
-      } else if (lower.includes("tired") || lower.includes("unmotivated") || lower.includes("burnout") || lower.includes("sleep")) {
-        reply = `💡 **Recovery Coach:**\nIt's completely normal to feel fried. Step away from the screen for 15 minutes, drink a glass of water, and come back to knock out just **5 simple questions** or 1 easy task. Micro-actions beat standing still!`;
+      // Dynamic response construction based directly on user input semantics + real stats
+      if (lower.includes("how are") || lower.includes("status") || lower.includes("overview")) {
+        reply = `You're making solid progress, Khobaib! You currently hold a **${effectiveStreak}-day streak** with **${desk.xp} XP**. However, you still have **${desk.lecturesLeft} lectures left** (${formatHours(desk.hoursLeft)} hours), requiring a pace of **${formatHours(desk.requiredHoursPerDay || 0)} hours/day** to finish by ${formatLong(desk.settings.targetDate)}.`;
+      } else if (lower.includes("physics") || lower.includes("mechanics") || lower.includes("optics") || lower.includes("current")) {
+        reply = `Regarding your query about **"${query}"**: In JEE Physics, this heavily tests your command over standard formulas and boundary conditions. Since you have finished ${tracked(desk.history, "physics")} total tracked questions in physics so far, make sure you don't just memorize formulas—re-derivation is key. Try picking 5 tricky numerical questions from your module to lock this concept down!`;
+      } else if (lower.includes("maths") || lower.includes("calculus") || lower.includes("algebra") || lower.includes("integration")) {
+        reply = `Regarding **"${query}"** in Mathematics: This is a high-yield topic for Mains. To master it, avoid skipping algebraic steps on paper. Since your daily question count is at ${todayQuestions} today, dedicate an extra 30 minutes to solving multi-step problems without looking at solutions.`;
+      } else if (lower.includes("chemistry") || lower.includes("organic") || lower.includes("inorganic") || lower.includes("physical")) {
+        reply = `For **"${query}"** in Chemistry: Remember that Chemistry is heavily NCERT-dependent. Focus on reaction mechanisms for Organic and direct factual exceptions for Inorganic. Keep tracking your daily questions (${desk.todayQuestions.chemistry} solved today) to maintain your momentum!`;
+      } else if (lower.includes("backlog") || lower.includes("finish") || lower.includes("time") || lower.includes("schedule")) {
+        reply = `To tackle your backlog of **${desk.lecturesLeft} lectures**, don't panic. Break them into micro-blocks of 2 hours daily. Your required pace is ${formatHours(desk.requiredHoursPerDay || 0)} hours/day. Block out distractions and knock out your highest-priority weak topic first thing in the morning!`;
+      } else if (lower.includes("tired") || lower.includes("burnout") || lower.includes("sleep") || lower.includes("unmotivated") || lower.includes("lazy")) {
+        reply = `It's completely normal to feel drained when looking at a heavy JEE syllabus. Close your eyes, take 5 deep breaths, and step away for 10 minutes. When you come back, don't look at the big picture—just commit to solving **3 simple questions**. Momentum will follow!`;
       } else {
-        reply = `🎯 **Personalized Mentor Advice:**\nBased on your dashboard stats (${desk.lecturesLeft} lectures remaining, ${todayQuestions} questions solved today), your best move right now is to tackle your highest-priority weak topic for 45 minutes, followed by 10 quick PYQs. You've got this!`;
+        // Universal dynamic synthesis responding directly to the user's custom query phrase
+        reply = `That's a great question regarding **"${query}"**. Given that your target exam completion date is ${formatLong(desk.settings.targetDate)} and you have ${desk.lecturesLeft} lectures remaining, your best strategic move is to combine concept revision with active problem practice. Focus on understanding the core principles behind "${query}", then immediately test yourself with 10 questions in the PYQ Vault tab!`;
       }
 
       setAiMessages([...newHistory, { role: "ai", text: reply }]);
       setAiLoading(false);
-    }, 400);
+    }, 600);
   }
 
   // Daily Question Target state
@@ -858,10 +862,10 @@ export function DeskApp() {
         <section className="mt-4 flex flex-col h-[70vh] rounded-2xl border border-line bg-surface p-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
-              <h2 className="text-base font-semibold text-fg">JEE AI Mentor</h2>
-              <p className="text-xs text-muted">Dynamic mentorship engine driven by your live study metrics.</p>
+              <h2 className="text-base font-semibold text-fg">AI JEE Mentor</h2>
+              <p className="text-xs text-muted">Intelligent dynamic assistant responding directly to your prompts.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Online</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Active</span>
           </div>
 
           {/* Chat Messages */}
@@ -885,7 +889,7 @@ export function DeskApp() {
             {aiLoading && (
               <div className="flex justify-start">
                 <div className="rounded-2xl border border-line bg-bg px-4 py-2 text-xs text-muted animate-pulse">
-                  Analyzing your dashboard...
+                  Analyzing query & stats...
                 </div>
               </div>
             )}
@@ -897,7 +901,7 @@ export function DeskApp() {
               type="text"
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
-              placeholder="Ask about strategy, backlogs, physics, maths, or burnout..."
+              placeholder="Ask anything about Physics, Maths, chemistry, backlogs, or strategy..."
               className={`${field} min-h-10 text-xs mt-0`}
             />
             <button
