@@ -100,6 +100,55 @@ export function DeskApp() {
   const [busy, setBusy] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
+  
+  // AI Coach state
+  const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
+    {
+      role: "ai",
+      text: "Hey! I'm your JEE coach. I have full context of your remaining lectures, pace, and daily questions. What are we tackling right now?"
+    }
+  ]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+
+  async function handleSendAiMessage(e: FormEvent) {
+    e.preventDefault();
+    const query = aiInput.trim();
+    if (!query || aiLoading || !desk) return;
+
+    const newHistory = [...aiMessages, { role: "user" as const, text: query }];
+    setAiMessages(newHistory);
+    setAiInput("");
+    setAiLoading(true);
+
+    const contextSummary = `
+- Streak: ${effectiveStreak} days (Safe today: ${streakAliveToday})
+- Total XP: ${desk.xp}
+- Lectures Left: ${desk.lecturesLeft} (${formatHours(desk.hoursLeft)} hours)
+- Target Date: ${desk.settings.targetDate} (Required pace: ${formatHours(desk.requiredHoursPerDay || 0)} h/day)
+- Actual Pace: ${formatHours(desk.paceHoursPerDay || 0)} h/day
+- Today's Questions: ${todayQuestions} (P: ${desk.todayQuestions.physics}, C: ${desk.todayQuestions.chemistry}, M: ${desk.todayQuestions.maths})
+- Open Weak Topics: ${desk.weakTopics.filter(t => !t.cleared).map(t => `${t.name} (${t.subject})`).join(", ") || "None"}
+`;
+
+    try {
+      const res = await fetch("/api/ai-coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: query, context: contextSummary }),
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setAiMessages([...newHistory, { role: "ai", text: data.reply }]);
+      } else {
+        setAiMessages([...newHistory, { role: "ai", text: data.error || "Could not connect to coach." }]);
+      }
+    } catch {
+      setAiMessages([...newHistory, { role: "ai", text: "Network error. Try again." }]);
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   // Daily Question Target state
   const [questionTarget, setQuestionTarget] = useState<number>(() => {
