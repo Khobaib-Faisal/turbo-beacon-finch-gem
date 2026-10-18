@@ -101,17 +101,17 @@ export function DeskApp() {
   const [signedOut, setSignedOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tracker");
 
-  // Dynamic AI Mentor state
+  // AI Mentor State
   const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string }>>([
     {
       role: "ai",
-      text: "Hey Khobaib! I'm your AI JEE mentor, wired directly into your live dashboard. Ask me anything about your backlog, study strategy, physics concepts, or exam schedule!"
+      text: "Hey! I am your REAL Gemini AI Mentor. Ask me any conceptual doubt, strategy question, or about your backlog!"
     }
   ]);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  function handleSendAiMessage(e: FormEvent) {
+  async function handleSendAiMessage(e: FormEvent) {
     e.preventDefault();
     const query = aiInput.trim();
     if (!query || aiLoading || !desk) return;
@@ -121,31 +121,55 @@ export function DeskApp() {
     setAiInput("");
     setAiLoading(true);
 
-    setTimeout(() => {
-      const lower = query.toLowerCase();
-      let reply = "";
-
-      // Dynamic response construction based directly on user input semantics + real stats
-      if (lower.includes("how are") || lower.includes("status") || lower.includes("overview")) {
-        reply = `You're making solid progress, Khobaib! You currently hold a **${effectiveStreak}-day streak** with **${desk.xp} XP**. However, you still have **${desk.lecturesLeft} lectures left** (${formatHours(desk.hoursLeft)} hours), requiring a pace of **${formatHours(desk.requiredHoursPerDay || 0)} hours/day** to finish by ${formatLong(desk.settings.targetDate)}.`;
-      } else if (lower.includes("physics") || lower.includes("mechanics") || lower.includes("optics") || lower.includes("current")) {
-        reply = `Regarding your query about **"${query}"**: In JEE Physics, this heavily tests your command over standard formulas and boundary conditions. Since you have finished ${tracked(desk.history, "physics")} total tracked questions in physics so far, make sure you don't just memorize formulas—re-derivation is key. Try picking 5 tricky numerical questions from your module to lock this concept down!`;
-      } else if (lower.includes("maths") || lower.includes("calculus") || lower.includes("algebra") || lower.includes("integration")) {
-        reply = `Regarding **"${query}"** in Mathematics: This is a high-yield topic for Mains. To master it, avoid skipping algebraic steps on paper. Since your daily question count is at ${todayQuestions} today, dedicate an extra 30 minutes to solving multi-step problems without looking at solutions.`;
-      } else if (lower.includes("chemistry") || lower.includes("organic") || lower.includes("inorganic") || lower.includes("physical")) {
-        reply = `For **"${query}"** in Chemistry: Remember that Chemistry is heavily NCERT-dependent. Focus on reaction mechanisms for Organic and direct factual exceptions for Inorganic. Keep tracking your daily questions (${desk.todayQuestions.chemistry} solved today) to maintain your momentum!`;
-      } else if (lower.includes("backlog") || lower.includes("finish") || lower.includes("time") || lower.includes("schedule")) {
-        reply = `To tackle your backlog of **${desk.lecturesLeft} lectures**, don't panic. Break them into micro-blocks of 2 hours daily. Your required pace is ${formatHours(desk.requiredHoursPerDay || 0)} hours/day. Block out distractions and knock out your highest-priority weak topic first thing in the morning!`;
-      } else if (lower.includes("tired") || lower.includes("burnout") || lower.includes("sleep") || lower.includes("unmotivated") || lower.includes("lazy")) {
-        reply = `It's completely normal to feel drained when looking at a heavy JEE syllabus. Close your eyes, take 5 deep breaths, and step away for 10 minutes. When you come back, don't look at the big picture—just commit to solving **3 simple questions**. Momentum will follow!`;
-      } else {
-        // Universal dynamic synthesis responding directly to the user's custom query phrase
-        reply = `That's a great question regarding **"${query}"**. Given that your target exam completion date is ${formatLong(desk.settings.targetDate)} and you have ${desk.lecturesLeft} lectures remaining, your best strategic move is to combine concept revision with active problem practice. Focus on understanding the core principles behind "${query}", then immediately test yourself with 10 questions in the PYQ Vault tab!`;
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      
+      // Error Catch 1: Missing API Key
+      if (!apiKey || apiKey === "undefined") {
+        setAiMessages([...newHistory, { role: "ai", text: "❌ SYSTEM ERROR: VITE_GEMINI_API_KEY is completely missing. Vercel did not inject it." }]);
+        setAiLoading(false);
+        return;
       }
 
-      setAiMessages([...newHistory, { role: "ai", text: reply }]);
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are an expert, highly intelligent JEE mentor. Answer naturally, directly, and do not sound like a robot.\n\nStudent's Live Stats:\n- Streak: ${effectiveStreak} days\n- Total XP: ${desk.xp}\n- Lectures Left: ${desk.lecturesLeft}\n- Today's Questions Solved: ${todayQuestions}\n\nStudent Question: ${query}`
+                }
+              ]
+            }
+          ]
+        })
+      });
+
+      const data = await res.json();
+
+      // Error Catch 2: Google rejects the request (Invalid Key, Quota, etc)
+      if (!res.ok || data.error) {
+        const errorMessage = data.error?.message || res.statusText || "Unknown Error";
+        setAiMessages([...newHistory, { role: "ai", text: `❌ GOOGLE API ERROR: ${errorMessage}` }]);
+        setAiLoading(false);
+        return;
+      }
+
+      // Success: Real AI Response
+      const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (replyText) {
+        setAiMessages([...newHistory, { role: "ai", text: replyText }]);
+      } else {
+        setAiMessages([...newHistory, { role: "ai", text: `❌ EMPTY RESPONSE FROM GOOGLE. Raw Data: ${JSON.stringify(data)}` }]);
+      }
+
+    } catch (err: any) {
+      setAiMessages([...newHistory, { role: "ai", text: `❌ NETWORK ERROR: ${err.message}` }]);
+    } finally {
       setAiLoading(false);
-    }, 600);
+    }
   }
 
   // Daily Question Target state
@@ -156,7 +180,7 @@ export function DeskApp() {
   });
   const [targetInput, setTargetInput] = useState<string>(() => String(questionTarget));
 
-  // Solved Question IDs set (ensures 1-time XP reward)
+  // Solved Question IDs set
   const [solvedIds, setSolvedIds] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -192,7 +216,6 @@ export function DeskApp() {
     }
   }
 
-  // Load subject questions from public JSON on demand
   useEffect(() => {
     let cancelled = false;
     setLoadingQuestions(true);
@@ -863,9 +886,9 @@ export function DeskApp() {
           <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
               <h2 className="text-base font-semibold text-fg">AI JEE Mentor</h2>
-              <p className="text-xs text-muted">Intelligent dynamic assistant responding directly to your prompts.</p>
+              <p className="text-xs text-muted">Powered by real Gemini 1.5 Flash.</p>
             </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Active</span>
+            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Live API</span>
           </div>
 
           {/* Chat Messages */}
@@ -889,7 +912,7 @@ export function DeskApp() {
             {aiLoading && (
               <div className="flex justify-start">
                 <div className="rounded-2xl border border-line bg-bg px-4 py-2 text-xs text-muted animate-pulse">
-                  Analyzing query & stats...
+                  Gemini is typing...
                 </div>
               </div>
             )}
@@ -901,7 +924,7 @@ export function DeskApp() {
               type="text"
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
-              placeholder="Ask anything about Physics, Maths, chemistry, backlogs, or strategy..."
+              placeholder="Ask anything about Physics, Maths, chemistry, or strategy..."
               className={`${field} min-h-10 text-xs mt-0`}
             />
             <button
