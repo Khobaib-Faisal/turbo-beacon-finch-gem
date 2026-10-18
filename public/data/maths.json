@@ -1,0 +1,21 @@
+[
+  { "chapter": "Sets, Relations & Functions", "subject": "maths", "questions": [] },
+  { "chapter": "Complex Numbers & Quadratic Equations", "subject": "maths", "questions": [] },
+  { "chapter": "Matrices & Determinants", "subject": "maths", "questions": [] },
+  { "chapter": "Permutations & Combinations", "subject": "maths", "questions": [] },
+  { "chapter": "Binomial Theorem", "subject": "maths", "questions": [] },
+  { "chapter": "Sequences & Series", "subject": "maths", "questions": [] },
+  { "chapter": "Straight Lines", "subject": "maths", "questions": [] },
+  { "chapter": "Circles", "subject": "maths", "questions": [] },
+  { "chapter": "Conic Sections (Parabola, Ellipse, Hyperbola)", "subject": "maths", "questions": [] },
+  { "chapter": "Limits, Continuity & Differentiability", "subject": "maths", "questions": [] },
+  { "chapter": "Application of Derivatives (AOD)", "subject": "maths", "questions": [] },
+  { "chapter": "Indefinite Integrals", "subject": "maths", "questions": [] },
+  { "chapter": "Definite Integrals", "subject": "maths", "questions": [] },
+  { "chapter": "Differential Equations", "subject": "maths", "questions": [] },
+  { "chapter": "Vector Algebra", "subject": "maths", "questions": [] },
+  { "chapter": "Three Dimensional Geometry (3D)", "subject": "maths", "questions": [] },
+  { "chapter": "Probability", "subject": "maths", "questions": [] },
+  { "chapter": "Statistics", "subject": "maths", "questions": [] },
+  { "chapter": "Trigonometric Functions & Equations", "subject": "maths", "questions": [] }
+]
