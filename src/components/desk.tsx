@@ -40,8 +40,6 @@ const SUBJECTS: Array<{ id: SubjectId; name: string; note: string }> = [
   },
 ];
 
-const QUESTION_TARGET_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
-
 function messageOf(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === "object" && err && "message" in err && typeof err.message === "string") {
@@ -71,17 +69,24 @@ export function DeskApp() {
   const [busy, setBusy] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
 
-  // Custom daily question target (stored locally so you can switch anytime)
+  // Custom daily question target with freeform typing
   const [questionTarget, setQuestionTarget] = useState<number>(() => {
     if (typeof window === "undefined") return 15;
     const saved = localStorage.getItem("jee_question_streak_target");
     return saved ? Number(saved) : 15;
   });
+  const [targetInput, setTargetInput] = useState<string>(() => String(questionTarget));
 
-  function updateQuestionTarget(val: number) {
-    setQuestionTarget(val);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("jee_question_streak_target", String(val));
+  function commitTarget(valStr: string) {
+    const parsed = parseInt(valStr.replace(/[^\d]/g, ""), 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      setQuestionTarget(parsed);
+      setTargetInput(String(parsed));
+      if (typeof window !== "undefined") {
+        localStorage.setItem("jee_question_streak_target", String(parsed));
+      }
+    } else {
+      setTargetInput(String(questionTarget));
     }
   }
 
@@ -149,7 +154,7 @@ export function DeskApp() {
 
   const todayQuestions = desk.todayQuestions.physics + desk.todayQuestions.chemistry + desk.todayQuestions.maths;
   
-  // Streak is safe if 1 lecture is done OR your question goal is hit
+  // Streak is safe if 1 lecture is done OR custom question target is reached
   const questionsHit = todayQuestions >= questionTarget;
   const streakAliveToday = desk.streakAliveToday || questionsHit;
   const effectiveStreak = streakAliveToday && desk.streak === 0 ? 1 : desk.streak;
@@ -181,7 +186,7 @@ export function DeskApp() {
           </p>
         </div>
 
-        {/* Streak Status & Question Target Selector */}
+        {/* Streak Status & Custom Typeable Target Box */}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-2">
           <p className="text-sm text-muted">
             {streakAliveToday
@@ -189,18 +194,22 @@ export function DeskApp() {
               : `Streak goal: Finish 1 lecture OR ${questionTarget} questions today.`}
           </p>
           <div className="flex items-center gap-2 text-xs text-muted">
-            <span>Question target:</span>
-            <select
-              value={questionTarget}
-              onChange={(e) => updateQuestionTarget(Number(e.target.value))}
-              className="rounded-lg border border-line bg-surface px-2 py-1 text-xs font-medium text-fg outline-none"
-            >
-              {QUESTION_TARGET_OPTIONS.map((val) => (
-                <option key={val} value={val}>
-                  {val} Qs
-                </option>
-              ))}
-            </select>
+            <span>Target questions:</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={targetInput}
+              aria-label="Daily target questions"
+              onChange={(e) => setTargetInput(e.target.value.replace(/[^\d]/g, ""))}
+              onBlur={() => commitTarget(targetInput)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              placeholder="e.g. 15"
+              className="w-14 rounded-lg border border-line bg-surface px-2 py-1 text-center text-xs font-semibold text-fg outline-none focus:border-accent"
+            />
           </div>
         </div>
 
