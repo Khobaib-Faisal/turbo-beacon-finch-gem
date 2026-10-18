@@ -1,57 +1,121 @@
-{/* LEVEL 1: SUBJECT SELECTOR + CHAPTER LIST */}
-{!selectedChapter && (
-  <div>
-    <div className="flex items-center justify-between border-b border-line pb-4">
-      <div>
-        <h2 className="text-lg font-semibold text-fg">PYQ Vault</h2>
-        <p className="text-xs text-muted">Select a subject and chapter to start practice.</p>
-      </div>
-      <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Official Archive</span>
-    </div>
+export type SubjectId = "physics" | "chemistry" | "maths";
 
-    {/* Subject Switcher */}
-    <div className="mt-4 flex gap-2">
-      {(["physics", "chemistry", "maths"] as SubjectId[]).map((subj) => (
-        <button
-          key={subj}
-          type="button"
-          onClick={() => setSelectedSubject(subj)}
-          className={`flex-1 rounded-xl py-2 text-xs font-semibold capitalize transition ${
-            selectedSubject === subj
-              ? "bg-accent text-accent-ink"
-              : "border border-line bg-bg text-muted hover:border-muted hover:text-fg"
-          }`}
-        >
-          {subj}
-        </button>
-      ))}
-    </div>
+export interface QuestionItem {
+  id: string;
+  source: string; // e.g. "JEE Main 2024", "JEE Adv 2023"
+  type: "mcq" | "integer";
+  question: string;
+  options?: string[]; // exactly 4 for MCQ
+  correctAnswer: number; // 0, 1, 2, 3 for MCQ; actual integer/number for numerical
+  explanation: string;
+}
 
-    {/* Filtered Chapter Cards */}
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-      {PYQ_DATABASE.filter((ch) => ch.subject === selectedSubject).map((ch) => {
-        const solvedCount = ch.questions.filter((q) => solvedIds.includes(q.id)).length;
-        return (
-          <button
-            key={ch.chapter}
-            type="button"
-            onClick={() => {
-              setSelectedChapter(ch.chapter);
-              setActiveQuestionIdx(null);
-              resetQuestionState();
-            }}
-            className="flex items-center justify-between rounded-xl border border-line bg-bg p-4 text-left transition hover:border-accent hover:bg-raised/40"
-          >
-            <div>
-              <p className="font-semibold text-fg text-sm">{ch.chapter}</p>
-              <p className="text-xs text-muted mt-0.5">{ch.questions.length} Questions</p>
-            </div>
-            <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
-              {solvedCount}/{ch.questions.length} Solved
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  </div>
-)}
+export interface ChapterPYQ {
+  chapter: string;
+  subject: SubjectId;
+  questions: QuestionItem[];
+}
+
+export const PYQ_DATABASE: ChapterPYQ[] = [
+  // =================== PHYSICS ===================
+  {
+    chapter: "Current Electricity",
+    subject: "physics",
+    questions: [
+      {
+        id: "phy-ce-001",
+        source: "JEE Main 2024",
+        type: "mcq",
+        question: "A wire of resistance 16 Ω is elongated to double its original length by stretching it uniformly. The resistance of the elongated wire is:",
+        options: ["32 Ω", "64 Ω", "4 Ω", "16 Ω"],
+        correctAnswer: 1,
+        explanation: "Volume is constant: V = A * L. Doubling length halves area. R' = ρ(2L)/(A/2) = 4R = 64 Ω."
+      },
+      {
+        id: "phy-ce-002",
+        source: "JEE Main 2023",
+        type: "integer",
+        question: "In a meter bridge experiment, null point is found at 40 cm from end A with a known resistance of 6 Ω in the right gap. The value of unknown resistance in the left gap is ____ Ω.",
+        correctAnswer: 4,
+        explanation: "R / 6 = 40 / 60 = 2 / 3 => R = 4 Ω."
+      }
+    ]
+  },
+  {
+    chapter: "Ray Optics",
+    subject: "physics",
+    questions: [
+      {
+        id: "phy-ro-001",
+        source: "JEE Main 2024",
+        type: "mcq",
+        question: "A convex lens of focal length 20 cm (μ = 1.5) is immersed in water (μ = 4/3). The new focal length is:",
+        options: ["40 cm", "60 cm", "80 cm", "100 cm"],
+        correctAnswer: 2,
+        explanation: "1/f_air = (1.5 - 1) * K = 1/20 => K = 1/10. 1/f_water = ((1.5/(4/3)) - 1) * K = 1/80 => f = 80 cm."
+      }
+    ]
+  },
+
+  // =================== CHEMISTRY ===================
+  {
+    chapter: "Chemical Bonding",
+    subject: "chemistry",
+    questions: [
+      {
+        id: "chem-cb-001",
+        source: "JEE Main 2023",
+        type: "mcq",
+        question: "The shape of XeF4 molecule according to VSEPR theory is:",
+        options: ["Square planar", "Tetrahedral", "Square pyramidal", "Octahedral"],
+        correctAnswer: 0,
+        explanation: "Xe has 8 valence electrons, 4 bonding pairs + 2 lone pairs => sp3d2 with square planar geometry."
+      }
+    ]
+  },
+  {
+    chapter: "Coordination Compounds",
+    subject: "chemistry",
+    questions: [
+      {
+        id: "chem-cc-001",
+        source: "JEE Main 2024",
+        type: "integer",
+        question: "The spin-only magnetic moment of [Fe(CN)6]4- complex ion is ____ BM (nearest integer).",
+        correctAnswer: 0,
+        explanation: "Fe2+ is 3d6. CN- is a strong field ligand causing pairing. Unpaired electrons n = 0 => μ = 0 BM."
+      }
+    ]
+  },
+
+  // =================== MATHEMATICS ===================
+  {
+    chapter: "Definite Integrals",
+    subject: "maths",
+    questions: [
+      {
+        id: "math-di-001",
+        source: "JEE Main 2024",
+        type: "mcq",
+        question: "The value of ∫[0 to π] (x sin(x)) / (1 + cos²(x)) dx is:",
+        options: ["π² / 4", "π² / 2", "π / 4", "π² / 8"],
+        correctAnswer: 0,
+        explanation: "Using King's property I = (π/2) ∫[0 to π] sin(x)/(1 + cos²(x)) dx = (π/2) [ -tan⁻¹(cos x) ]_0^π = π²/4."
+      }
+    ]
+  },
+  {
+    chapter: "Matrices & Determinants",
+    subject: "maths",
+    questions: [
+      {
+        id: "math-md-001",
+        source: "JEE Main 2023",
+        type: "integer",
+        question: "If A is a 3x3 matrix with |A| = 4, then |adj(2A)| is equal to ____.",
+        correctAnswer: 1024,
+        explanation: "adj(2A) determinant = |2A|^(n-1) = (2³ * |A|)² = (8 * 4)² = 32² = 1024."
+      }
+    ]
+  }
+];
