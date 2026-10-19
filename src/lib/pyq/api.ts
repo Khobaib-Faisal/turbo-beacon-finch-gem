@@ -4,6 +4,11 @@ import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { requireAdmin } from "@/lib/pyq/admin";
 import { parsePrepWiserText, correctAnswerToNumber } from "@/lib/pyq/parser";
+import {
+  pyqImageKeyFromExternalKey,
+  pyqImageObjectKey,
+  storePyqImage,
+} from "@/lib/pyq/object-storage.server";
 import type { ChapterBundle, ExtractResult, ImportQuestionInput } from "@/lib/pyq/types";
 import type { SubjectId } from "@/lib/jee/types";
 
@@ -97,6 +102,12 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
     for (const q of data.questions) {
       const id = crypto.randomUUID();
       const optionsJson = q.options ? JSON.stringify(q.options) : null;
+      const imageUrl = q.questionImageUrl
+        ? await storePyqImage(
+            pyqImageKeyFromExternalKey(q.externalKey),
+            q.questionImageUrl,
+          )
+        : null;
       if (data.mode === "insert") {
         const rows = await sql.query<{ id: string }>(
           `insert into pyq_questions (
@@ -113,7 +124,7 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
             q.questionText, optionsJson, q.correctAnswer, "", false,
             Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
-            q.questionImageUrl ?? null, q.year,
+            imageUrl, q.year,
           ],
         );
         if (rows[0]) inserted += 1;
@@ -152,7 +163,7 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
             q.questionText, optionsJson, q.correctAnswer, "", false,
             Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
-            q.questionImageUrl ?? null, q.year,
+            imageUrl, q.year,
           ],
         );
         if (rows[0]) {
@@ -249,6 +260,38 @@ export const getPyqQuestionImage = createServerFn({ method: "GET" })
       select question_image_url from pyq_questions where id = ${data.id} limit 1
     `;
     return { imageUrl: rows[0]?.question_image_url ?? null };
+  });
+
+/** Move existing inline image data out of Postgres in small admin-only batches. */
+export const migratePyqImagesToObjectStorage = createServerFn({ method: "POST" })
+  .middleware([adminMiddleware])
+  .handler(async () => {
+    const sql = await getSql();
+    const rows = await sql<{ id: string; question_image_url: string }>`
+      select id, question_image_url
+      from pyq_questions
+      where question_image_url like 'data:image/jpeg;base64,%'
+      order by created_at, id
+      limit 20
+    `;
+    let moved = 0;
+    for (const row of rows) {
+      const imageUrl = await storePyqImage(
+        pyqImageObjectKey(row.id),
+        row.question_image_url,
+      );
+      const result = await sql.query<{ id: string }>(
+        `update pyq_questions set question_image_url = $2, updated_at = now()
+         where id = $1 and question_image_url = $3 returning id`,
+        [row.id, imageUrl, row.question_image_url],
+      );
+      moved += result.length;
+    }
+    const remaining = await sql<{ n: number }>`
+      select count(*)::int as n from pyq_questions
+      where question_image_url like 'data:image/jpeg;base64,%'
+    `;
+    return { moved, remaining: remaining[0]?.n ?? 0 };
   });
 
 export const getPyqImportStats = createServerFn({ method: "GET" })
