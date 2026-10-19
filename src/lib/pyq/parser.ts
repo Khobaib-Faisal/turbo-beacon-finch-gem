@@ -351,7 +351,7 @@ export function parsePrepWiserText(
     }
 
     const pageNumber = pageAt(pages, block.start);
-    const externalKey = `${subject}|${chapterSlug(chapter)}|q${block.num}`;
+    const externalKey = `${subject}|${chapterSlug(chapter)}${year == null ? "" : `|${year}`}|q${block.num}`;
 
     const displayText = questionText.length >= 12 ? questionText : "";
 
