@@ -11,6 +11,7 @@ import {
   deletePyqChapter,
   deletePyqJunk,
   movePyqChapter,
+  migratePyqImagesToObjectStorage,
 } from "@/lib/pyq/api";
 import type { ExtractedQuestion, ExtractResult, ImportQuestionInput } from "@/lib/pyq/types";
 import type { SubjectId } from "@/lib/jee/types";
@@ -408,6 +409,48 @@ function PyqImportPage() {
         >
           Delete all junk / unreadable
         </button>
+        <div className="rounded-xl border border-line bg-bg p-3">
+          <p className="text-sm font-medium text-fg">Free database space by moving question images</p>
+          <p className="mt-1 text-xs text-muted">
+            This keeps every question and diagram, moving only the image files to Neon Object Storage.
+            Set up the free storage bucket and Vercel keys first. Keep this page open while it runs.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            className="mt-3 min-h-10 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-ink disabled:opacity-40"
+            onClick={() => {
+              void (async () => {
+                setBusy(true);
+                setError(null);
+                let remaining = Number.POSITIVE_INFINITY;
+                let movedTotal = 0;
+                try {
+                  for (let i = 0; i < 100 && remaining > 0; i += 1) {
+                    const res = await migratePyqImagesToObjectStorage();
+                    movedTotal += res.moved;
+                    remaining = res.remaining;
+                    setImportMsg(`Moved ${movedTotal} question images; ${remaining} remain…`);
+                    if (res.moved === 0 && remaining > 0) {
+                      throw new Error("No images moved. Check the Neon storage bucket setup and try again.");
+                    }
+                  }
+                  setImportMsg(
+                    remaining === 0
+                      ? `Moved ${movedTotal} images. The database can now reclaim their old image data.`
+                      : `Moved ${movedTotal} images; ${remaining} remain. Click the button again to continue.`,
+                  );
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Image migration failed.");
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+          >
+            Move existing images to Neon Storage
+          </button>
+        </div>
         {dbChapters.length ? (
           <ul className="mt-3 space-y-2">
             {dbChapters.map((ch) => (
