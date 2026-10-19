@@ -313,6 +313,29 @@ export const deletePyqChapter = createServerFn({ method: "POST" })
     return { deleted: rows.length, chapter: data.chapter, subject: data.subject };
   });
 
+/** Move a chapter's questions to a shared chapter name (admin only). */
+export const movePyqChapter = createServerFn({ method: "POST" })
+  .middleware([adminMiddleware])
+  .validator((input: { subject: SubjectId; chapter: string; targetChapter: string }) => {
+    if (!input?.chapter || !input.targetChapter?.trim() || !isSubject(input.subject)) {
+      throw new Error("Choose the source and destination chapter.");
+    }
+    return {
+      subject: input.subject,
+      chapter: input.chapter.trim().slice(0, 200),
+      targetChapter: input.targetChapter.trim().slice(0, 200),
+    };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const rows = await sql.query<{ id: string }>(
+      `update pyq_questions set chapter = $3, updated_at = now()
+       where subject = $1 and chapter = $2 returning id`,
+      [data.subject, data.chapter, data.targetChapter],
+    );
+    return { moved: rows.length, from: data.chapter, to: data.targetChapter, subject: data.subject };
+  });
+
 /** Remove unreadable / junk rows and bogus chapter names like "1/3". */
 export const deletePyqJunk = createServerFn({ method: "POST" })
   .middleware([adminMiddleware])
