@@ -7,6 +7,9 @@ import {
   extractPyqFromText,
   getPyqImportStats,
   importPyqQuestions,
+  listPyqDbChapters,
+  deletePyqChapter,
+  deletePyqJunk,
 } from "@/lib/pyq/api";
 import type { ExtractedQuestion, ExtractResult, ImportQuestionInput } from "@/lib/pyq/types";
 import type { SubjectId } from "@/lib/jee/types";
@@ -17,7 +20,6 @@ export const Route = createFileRoute("/admin/pyq-import")({
 
 type ReviewRow = ExtractedQuestion & { keep: boolean };
 
-/** Reconstruct lines from PDF.js item Y positions (avoids wiping stems). */
 async function extractTextFromPdf(file: File): Promise<string> {
   const pdfjs: any = await import(
     /* @vite-ignore */ "https://esm.sh/pdfjs-dist@4.10.38/build/pdf.mjs"
@@ -83,15 +85,26 @@ function PyqImportPage() {
     bySubject: Record<string, number>;
     needsRepair?: number;
   } | null>(null);
+  const [dbChapters, setDbChapters] = useState<
+    Array<{ subject: string; chapter: string; n: number; junk: number }>
+  >([]);
+
+  async function refreshAdminMeta() {
+    try {
+      const [s, ch] = await Promise.all([getPyqImportStats(), listPyqDbChapters()]);
+      setStats(s);
+      setDbChapters(ch);
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
     checkIsAdmin()
       .then((r) => setAdminOk(r.isAdmin))
       .catch(() => setAdminOk(false));
-    getPyqImportStats()
-      .then(setStats)
-      .catch(() => setStats(null));
+    void refreshAdminMeta();
   }, [user?.id]);
 
   const keepCount = useMemo(() => rows.filter((r) => r.keep).length, [rows]);
@@ -146,7 +159,10 @@ function PyqImportPage() {
       setRows(
         extracted.questions.map((q) => ({
           ...q,
-          keep: Boolean(q.questionText.trim()) && !q.flags.includes("extraction_failed"),
+          keep:
+            Boolean(q.questionText.trim()) &&
+            !q.flags.includes("extraction_failed") &&
+            !q.flags.includes("low_text_quality"),
         })),
       );
     } catch (e) {
@@ -190,8 +206,7 @@ function PyqImportPage() {
           ? `Upsert done: ${res.inserted} new, ${res.updated} updated, ${res.skipped} skipped.`
           : `Imported ${res.inserted} new; skipped ${res.skipped} existing (insert-only).`,
       );
-      const s = await getPyqImportStats();
-      setStats(s);
+      await refreshAdminMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed.");
     } finally {
@@ -210,7 +225,7 @@ function PyqImportPage() {
           <p className="text-xs uppercase tracking-wider text-muted">Admin</p>
           <h1 className="font-serif text-2xl font-bold text-fg">PYQ PDF Import</h1>
           <p className="mt-1 text-sm text-muted">
-            Re-upload with Upsert to fix placeholder stems. Answers stay unverified.
+            Clean up junk below, then re-import chapters carefully. Answers stay unverified.
           </p>
         </div>
         <Link
@@ -231,7 +246,83 @@ function PyqImportPage() {
         </p>
       ) : null}
 
+      <section className="mt-6 space-y-3 rounded-2xl border border-line bg-surface p-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-fg">1. Cleanup bad imports</h2>
+        <p className="text-xs text-muted">
+          Delete placeholders, very short stems, and bogus chapters like "1/3". Static JSON is
+          not touched.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          className="min-h-10 rounded-xl border border-accent/40 bg-accent/10 px-4 text-sm font-semibold text-accent disabled:opacity-40"
+          onClick={() => {
+            void (async () => {
+              if (!confirm("Delete all junk / unreadable imported questions?")) return;
+              setBusy(true);
+              setError(null);
+              try {
+                const res = await deletePyqJunk();
+                setImportMsg(`Deleted ${res.deleted} junk question(s).`);
+                await refreshAdminMeta();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Cleanup failed.");
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+        >
+          Delete all junk / unreadable
+        </button>
+        {dbChapters.length ? (
+          <ul className="mt-3 space-y-2">
+            {dbChapters.map((ch) => (
+              <li
+                key={`${ch.subject}|${ch.chapter}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-bg px-3 py-2 text-sm"
+              >
+                <span className="text-fg">
+                  <span className="text-muted">{ch.subject}</span> · {ch.chapter}{" "}
+                  <span className="text-xs text-muted">
+                    ({ch.n} qs{ch.junk ? ` · ${ch.junk} junk` : ""})
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-lg border border-line px-2 py-1 text-xs text-accent disabled:opacity-40"
+                  onClick={() => {
+                    void (async () => {
+                      if (!confirm(`Delete entire chapter "${ch.chapter}" (${ch.n} questions)?`))
+                        return;
+                      setBusy(true);
+                      try {
+                        const res = await deletePyqChapter({
+                          data: { subject: ch.subject as SubjectId, chapter: ch.chapter },
+                        });
+                        setImportMsg(`Deleted ${res.deleted} from ${res.chapter}.`);
+                        await refreshAdminMeta();
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : "Delete failed.");
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  Delete chapter
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted">No DB chapters yet.</p>
+        )}
+      </section>
+
       <section className="mt-6 space-y-4 rounded-2xl border border-line bg-surface p-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-fg">2. Import chapter PDF</h2>
         <label className="block text-sm font-medium text-fg">
           Subject
           <select
@@ -295,12 +386,14 @@ function PyqImportPage() {
                   setRows((prev) =>
                     prev.map((r) => ({
                       ...r,
-                      keep: Boolean(r.questionText.trim()),
+                      keep:
+                        Boolean(r.questionText.trim()) &&
+                        !r.flags.includes("low_text_quality"),
                     })),
                   )
                 }
               >
-                Keep with text
+                Keep readable
               </button>
               <button
                 type="button"
@@ -330,7 +423,9 @@ function PyqImportPage() {
           <div className="space-y-3">
             {rows.map((row, idx) => {
               const failed =
-                row.flags.includes("extraction_failed") || !row.questionText.trim();
+                row.flags.includes("extraction_failed") ||
+                row.flags.includes("low_text_quality") ||
+                !row.questionText.trim();
               return (
                 <article
                   key={row.externalKey}
@@ -357,7 +452,7 @@ function PyqImportPage() {
                       ) : null}
                       {failed ? (
                         <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                          extraction failed
+                          skip / unreadable
                         </span>
                       ) : row.needsReview ? (
                         <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
@@ -379,7 +474,7 @@ function PyqImportPage() {
                     value={row.questionText}
                     placeholder={
                       failed
-                        ? `No stem extracted — paste from PDF page ${row.pageNumber ?? "?"}`
+                        ? `Unreadable — paste from PDF page ${row.pageNumber ?? "?"} or skip`
                         : undefined
                     }
                     onChange={(e) => updateRow(idx, { questionText: e.target.value })}
@@ -412,8 +507,7 @@ function PyqImportPage() {
       ) : null}
 
       <p className="mt-10 text-xs text-muted">
-        To fix previously imported placeholders: re-upload the same chapter PDF with Upsert on.
-        Matches subject + chapter slug + question number. Verified answers are not overwritten.
+        Tip: delete the bad Continuity / "1/3" chapters first, then re-import Continuity once.
       </p>
     </main>
   );
