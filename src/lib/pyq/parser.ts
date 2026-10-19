@@ -57,13 +57,18 @@ export function correctAnswerToNumber(
 }
 
 function detectChapter(text: string, fileName: string): string {
+  // PrepWiser filenames are authoritative — never use page markers like "1/3"
   const fromFile = fileName
+    .replace(/^[0-9a-f-]{8,}_/i, "") // strip uuid prefixes from mobile uploads
     .replace(/^PrepWiser_/i, "")
     .replace(/_JEE-Main-PYQs\.pdf$/i, "")
     .replace(/\.pdf$/i, "")
     .replace(/_/g, " ")
     .replace(/-/g, " ")
     .trim();
+  if (fromFile && /[A-Za-z]{3,}/.test(fromFile)) {
+    return fromFile.replace(/\s+/g, " ");
+  }
 
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   for (let i = 0; i < Math.min(lines.length, 40); i += 1) {
@@ -77,26 +82,12 @@ function detectChapter(text: string, fileName: string): string {
     }
     if (/prepwiser/i.test(line)) continue;
     if (/jee\s*main/i.test(line)) continue;
+    if (/^\d+\s*\/\s*\d+$/.test(line)) continue;
+    if (/^\d+$/.test(line)) continue;
     const spaces = (line.match(/ /g) || []).length;
     if (line.length > 8 && spaces / line.length > 0.3) continue;
     if (/^[·•\-|]+$/.test(line)) continue;
-    if (/^\d+$/.test(line)) continue;
-    if (line.length >= 3 && line.length < 90) {
-      if (fromFile) {
-        const a = line.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const b = fromFile.toLowerCase().replace(/[^a-z0-9]/g, "");
-        if (a && b && (b.includes(a) || a.includes(b.slice(0, 12)))) {
-          return line.replace(/\s+/g, " ");
-        }
-      }
-    }
-  }
-  for (let i = 0; i < Math.min(lines.length, 40); i += 1) {
-    const line = lines[i];
-    if (/prepwiser|jee main|chapter-wise|pyqs/i.test(line)) continue;
-    const spaces = (line.match(/ /g) || []).length;
-    if (line.length > 8 && spaces / line.length > 0.3) continue;
-    if (line.length >= 3 && line.length < 90 && !/^\d+$/.test(line)) {
+    if (line.length >= 3 && line.length < 90 && /[A-Za-z]{3,}/.test(line)) {
       return line.replace(/\s+/g, " ");
     }
   }
@@ -238,10 +229,6 @@ function isNumerical(header: string, body: string): boolean {
   return false;
 }
 
-/**
- * Remove PrepWiser chrome without eating the whole page when text is one long line.
- * Never use unbounded [^\n]* after the Q header (that wiped stems under pdf.js).
- */
 function stripHeaderNoise(body: string): string {
   let t = body;
   t = t.replace(
@@ -349,23 +336,44 @@ export function parsePrepWiserText(
       needsReview = true;
     }
 
+    let qType: PyqQuestionType =
+      options && options.filter(Boolean).length >= 2 ? "mcq" : "integer";
+    if (ans && /^[A-D]$/i.test(ans)) {
+      qType = "mcq";
+      if (!options || options.filter(Boolean).length < 2) {
+        flags.push("options_incomplete");
+        needsReview = true;
+      }
+    } else if (ans && /^-?\d/.test(ans)) {
+      qType = "integer";
+    }
+
     const pageNumber = pageAt(pages, block.start);
     const externalKey = `${subject}|${chapterSlug(chapter)}|q${block.num}`;
 
     const displayText = questionText.length >= 12 ? questionText : "";
 
+    const alpha = (displayText.match(/[A-Za-z]/g) || []).length;
+    if (displayText && alpha < 20) {
+      flags.push("low_text_quality");
+      needsReview = true;
+    }
+
     questions.push({
       externalKey,
       questionNumber: block.num,
       source,
-      type: options && options.filter(Boolean).length >= 2 ? "mcq" : "integer",
+      type: qType,
       questionText: displayText,
-      options: options && options.some(Boolean) ? options : null,
+      options: qType === "mcq" ? (options && options.some(Boolean) ? options : null) : null,
       correctAnswer: ans,
       topic: block.topic,
       pageNumber,
       needsReview: needsReview || displayText.length < 12,
-      flags: displayText.length < 12 ? [...flags, "extraction_failed"] : flags,
+      flags:
+        displayText.length < 12
+          ? [...flags, "extraction_failed"]
+          : flags,
     });
   }
 
