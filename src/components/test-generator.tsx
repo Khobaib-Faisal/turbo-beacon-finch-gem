@@ -189,7 +189,9 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
   async function startTest() {
     setConfigError(null);
     if (starting) return;
-    const subjects = mode === "jee-main" ? SUBJECTS.map((subject) => subject.id) : selectedSubjects;
+    const subjects = SUBJECTS.map((subject) => subject.id).filter((subject) =>
+      mode === "jee-main" || selectedSubjects.includes(subject),
+    );
     if (subjects.length === 0) {
       setConfigError("Select at least one subject.");
       return;
@@ -213,7 +215,7 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
           if (mcq.length < 20 || numerical.length < 5) {
             throw new Error(`${subject.name} needs 20 usable MCQs and 5 usable numerical PYQs. Available: ${mcq.length} MCQs and ${numerical.length} numerical.`);
           }
-          selected.push(...mcq.slice(0, 20), ...numerical.slice(0, 5));
+          selected.push(...shuffle([...mcq.slice(0, 20), ...numerical.slice(0, 5)]));
         }
       } else {
         if (balanceError) throw new Error(balanceError);
@@ -222,7 +224,6 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
           selected.push(...shuffle(selectedPool.filter((question) => question.subject === subject)).slice(0, perSubject));
         }
       }
-      selected = shuffle(selected);
       const title = mode === "jee-main" ? "JEE Main Paper 1 · 75 Questions" : `Custom PYQ test · ${questionCount} questions`;
       const duration = mode === "jee-main" ? 180 : durationMinutes;
       const { id } = await createTestAttempt({
