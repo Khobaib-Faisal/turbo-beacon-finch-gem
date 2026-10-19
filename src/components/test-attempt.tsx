@@ -83,6 +83,15 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
   const active = questions[currentIndex] ?? null;
   const activeAnswer = active ? answers[active.id] ?? blankAnswer() : blankAnswer();
   const complete = Boolean(analysis);
+  const questionGroups = SUBJECTS.map(({ id, name }) => ({
+    id,
+    name,
+    items: questions.flatMap((question, index) =>
+      question.subject === id ? [{ question, index }] : [],
+    ),
+  })).filter((group) => group.items.length > 0);
+  const activeGroup = questionGroups.find((group) => group.id === active?.subject);
+  const activeSubjectIndex = activeGroup?.items.findIndex((item) => item.index === currentIndex) ?? 0;
 
   async function finishTest(auto = false) {
     if (!attempt || analysis || submitting || submittedRef.current) return;
@@ -144,6 +153,13 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
   if (analysis) {
     const percent = Math.round(100 * analysis.score / Math.max(analysis.maxScore, 1));
     const timeMax = Math.max(...SUBJECTS.map(({ id }) => analysis.subjects[id].seconds), 1);
+    const groupedAnalysis = SUBJECTS.flatMap(({ id, name }) =>
+      analysis.questions.filter((question) => question.subject === id).map((question, subjectIndex) => ({
+        question,
+        subjectName: name,
+        subjectIndex,
+      })),
+    );
     return (
       <main className="mx-auto min-h-screen max-w-6xl space-y-4 p-4 sm:p-8">
         <header className={outer + " flex flex-wrap items-center justify-between gap-3"}>
@@ -181,7 +197,7 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
 
         <section className="space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2"><div><h2 className="text-lg font-semibold text-fg">Question-by-question analysis</h2><p className="text-xs text-muted">Your response, correct answer, time spent, and solution for each PYQ.</p></div><p className="text-xs text-muted">{analysis.questions.length} questions</p></div>
-          {analysis.questions.map((question, index) => {
+          {groupedAnalysis.map(({ question, subjectName, subjectIndex }, index) => {
             const correct = question.isCorrect === true;
             const unanswered = question.isCorrect === null;
             const showSolution = expanded[question.id] ?? false;
@@ -191,7 +207,7 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
                   <span className={"flex size-8 shrink-0 items-center justify-center rounded-full " + (correct ? "bg-emerald-500/15 text-emerald-400" : unanswered ? "bg-raised text-muted" : "bg-red-500/15 text-red-400")}>
                     {correct ? <CheckCircle2 className="size-4" /> : unanswered ? <Eye className="size-4" /> : <XCircle className="size-4" />}
                   </span>
-                  <div><p className="font-semibold text-fg">Question {index + 1} <span className="ml-2 text-xs font-normal text-muted">{SUBJECTS.find((subject) => subject.id === question.subject)?.name} · {question.chapter}</span></p>
+                  <div><p className="font-semibold text-fg">{subjectName} · Question {subjectIndex + 1} <span className="ml-2 text-xs font-normal text-muted">Paper question {index + 1} · {question.chapter}</span></p>
                     <p className="mt-1 text-xs text-muted">{correct ? "Correct · +4 marks" : unanswered ? "Not attempted · 0 marks" : "Incorrect · −1 mark"} · {clock(question.secondsSpent)} spent {question.answerVerified === false ? "· answer key unverified" : ""}</p></div>
                 </div>
                 <button type="button" onClick={() => setExpanded((current) => ({ ...current, [question.id]: !showSolution }))} className={quiet + " min-h-10"}>{showSolution ? "Hide solution" : "View solution"}</button>
@@ -219,12 +235,21 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
         <div><p className="text-xs uppercase tracking-wider text-muted">{attempt.mode === "jee-main" ? "JEE Main Paper 1 · 2026 pattern" : "Custom PYQ test"}</p><h1 className="mt-1 text-xl font-semibold text-fg">{attempt.title}</h1><p className="mt-1 text-xs text-muted">+4 correct · −1 incorrect · unanswered 0 · {answeredCount}/{questions.length} answered</p></div>
         <div aria-live="polite" className={"flex items-center gap-2 rounded-xl border px-3 py-2 font-mono text-lg tabular-nums " + (secondsLeft <= 300 ? "border-accent bg-accent/10 text-accent" : "border-line bg-bg text-fg")}><Clock3 className="size-4" />{clock(secondsLeft)}</div>
       </header>
+      <nav aria-label="Question sections by subject" className="grid gap-2 sm:grid-cols-3">
+        {questionGroups.map((group) => (
+          <button key={group.id} type="button" onClick={() => setCurrentIndex(group.items[0].index)}
+            aria-current={active?.subject === group.id ? "step" : undefined}
+            className={"flex min-h-12 items-center justify-between rounded-xl border px-3 text-sm font-semibold " + (active?.subject === group.id ? "border-accent bg-accent/10 text-fg" : "border-line bg-surface text-muted")}>
+            <span>{group.name}</span><span className="text-xs font-normal">{group.items.length} questions</span>
+          </button>
+        ))}
+      </nav>
       {loadError ? <p role="alert" className="rounded-xl border border-line bg-bg p-3 text-sm text-muted">{loadError}</p> : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_270px]">
         <section className={outer}>
           {active ? <>
             <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line pb-3">
-              <div><p className="text-xs text-muted">{SUBJECTS.find((subject) => subject.id === active.subject)?.name} · {active.chapter} · {clock(secondsByQuestion[active.id] ?? 0)} on this question</p><h2 className="mt-1 font-semibold text-fg">Question {currentIndex + 1}<span className="ml-2 text-xs font-normal text-muted">{active.type === "mcq" ? "Multiple choice" : "Numerical answer"}</span></h2></div>
+              <div><p className="text-xs text-muted">{activeGroup?.name} · {active.chapter} · {clock(secondsByQuestion[active.id] ?? 0)} on this question</p><h2 className="mt-1 font-semibold text-fg">Question {activeSubjectIndex + 1} of {activeGroup?.items.length}<span className="ml-2 text-xs font-normal text-muted">Overall {currentIndex + 1}/{questions.length} · {active.type === "mcq" ? "Multiple choice" : "Numerical answer"}</span></h2></div>
               <button type="button" onClick={() => setAnswers((current) => ({ ...current, [active.id]: { ...activeAnswer, review: !activeAnswer.review } }))} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-bg px-3 text-xs text-fg"><Flag className="size-3.5" />{activeAnswer.review ? "Marked for review" : "Mark for review"}</button>
             </div>
             {active.hasVisualImage || active.visualQuestion || active.imageUrl ? <OriginalQuestionImage question={active} /> : <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-fg">{active.question}</p>}
@@ -242,12 +267,20 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
         </section>
         <aside className={outer}>
           <h2 className="font-semibold text-fg">Question palette</h2><p className="mt-1 text-xs text-muted">Tap any number to move between questions.</p>
-          <div className="mt-4 grid grid-cols-5 gap-2">{questions.map((question, index) => {
-            const answer = answers[question.id] ?? blankAnswer();
-            const hasAnswer = attempted(question, answer);
-            const style = (index === currentIndex ? "outline outline-2 outline-accent " : "") + (answer.review ? "border-accent bg-accent/10 text-fg" : hasAnswer ? "border-line bg-raised text-fg" : "border-line bg-bg text-muted");
-            return <button type="button" key={question.id + index} onClick={() => setCurrentIndex(index)} aria-label={"Go to question " + (index + 1)} className={"min-h-10 rounded-lg border text-xs font-semibold " + style}>{index + 1}</button>;
-          })}</div>
+          <div className="mt-4 space-y-4">
+            {questionGroups.map((group) => <section key={group.id}>
+              <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+                <h3 className={"font-semibold " + (active?.subject === group.id ? "text-accent" : "text-fg")}>{group.name}</h3>
+                <span className="text-muted">{group.items.filter(({ question }) => attempted(question, answers[question.id] ?? blankAnswer())).length}/{group.items.length} answered</span>
+              </div>
+              <div className="grid grid-cols-5 gap-2">{group.items.map(({ question, index }, subjectIndex) => {
+                const answer = answers[question.id] ?? blankAnswer();
+                const hasAnswer = attempted(question, answer);
+                const style = (index === currentIndex ? "outline outline-2 outline-accent " : "") + (answer.review ? "border-accent bg-accent/10 text-fg" : hasAnswer ? "border-line bg-raised text-fg" : "border-line bg-bg text-muted");
+                return <button type="button" key={question.id + index} onClick={() => setCurrentIndex(index)} aria-label={group.name + " question " + (subjectIndex + 1)} className={"min-h-10 rounded-lg border text-xs font-semibold " + style}>{subjectIndex + 1}</button>;
+              })}</div>
+            </section>)}
+          </div>
           <div className="mt-4 space-y-1 border-t border-line pt-3 text-xs text-muted"><p>Answered: {answeredCount} / {questions.length}</p><p>Current question time: {active ? clock(secondsByQuestion[active.id] ?? 0) : "00:00:00"}</p><p>Time elapsed: {clock(elapsed)}</p></div>
           <button type="button" onClick={() => void finishTest()} disabled={submitting} className="mt-4 w-full min-h-11 rounded-xl border border-line bg-raised px-4 text-sm font-semibold text-fg disabled:opacity-50">{submitting ? "Saving…" : "Submit test"}</button>
         </aside>
