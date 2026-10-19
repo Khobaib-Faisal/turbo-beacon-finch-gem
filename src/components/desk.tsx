@@ -911,7 +911,7 @@ export function DeskApp() {
       )}
 
       {/* TAB 4: TEST GENERATOR */}
-      {activeTab === "tests" && <TestGenerator />}
+      {activeTab === "tests" && <TestGenerator onAskAi={(context) => { setAiInput(context); setActiveTab("ai"); }} />}
 
       {/* TAB 5: AI COACH */}
       {activeTab === "ai" && (
