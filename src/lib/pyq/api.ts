@@ -246,6 +246,47 @@ export const listPyqChapters = createServerFn({ method: "GET" })
     return [...byChapter.values()];
   });
 
+/** Return this signed-in user's saved PYQ solve history. */
+export const listSolvedPyqQuestionIds = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<string[]> => {
+    const sql = await getSql();
+    const rows = await sql<{ question_id: string }>`
+      select question_id
+      from pyq_solved_questions
+      where user_id = ${context.userId}
+    `;
+    return rows.map((row) => row.question_id);
+  });
+
+/** Save solved question ids for the signed-in user; existing solves are retained. */
+export const saveSolvedPyqQuestionIds = createServerFn({ method: "POST" })
+  .validator((input: { ids: string[] }) => {
+    if (!input || !Array.isArray(input.ids) || input.ids.length > 20_000) {
+      throw new Error("Invalid solved question list.");
+    }
+    const ids = [...new Set(input.ids.map((id) => {
+      if (typeof id !== "string" || !id.trim() || id.length > 200) {
+        throw new Error("A solved question id is invalid.");
+      }
+      return id.trim();
+    }))];
+    return { ids };
+  })
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }) => {
+    if (data.ids.length === 0) return { saved: 0 };
+    const sql = await getSql();
+    const rows = await sql.query<{ question_id: string }>(
+      `insert into pyq_solved_questions (user_id, question_id)
+       select $1, unnest($2::text[])
+       on conflict (user_id, question_id) do nothing
+       returning question_id`,
+      [context.userId, data.ids],
+    );
+    return { saved: rows.length };
+  });
+
 /** Load a visual question on demand so an entire chapter of image data isn't sent at once. */
 export const getPyqQuestionImage = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
