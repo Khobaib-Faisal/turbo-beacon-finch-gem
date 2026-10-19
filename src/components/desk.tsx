@@ -29,6 +29,8 @@ import {
   setWeakCleared,
   undoLastLecture,
 } from "@/lib/jee/api";
+import { listPyqChapters } from "@/lib/pyq/api";
+import { mergeVaultChapters } from "@/lib/pyq/merge-chapters";
 import { daysBetween, formatHours, formatLong } from "@/lib/jee/pace";
 import type { Bucket, Desk, DeskResult, DeskSettings, QuestionDay, Reward, SubjectId } from "@/lib/jee/types";
 
@@ -217,16 +219,19 @@ export function DeskApp() {
   useEffect(() => {
     let cancelled = false;
     setLoadingQuestions(true);
-    fetch(`/data/${selectedSubject}.json`)
+    const staticPromise = fetch(`/data/${selectedSubject}.json`)
       .then((res) => {
         if (!res.ok) throw new Error("Not loaded");
-        return res.json();
+        return res.json() as Promise<ChapterPYQ[]>;
       })
-      .then((data: ChapterPYQ[]) => {
-        if (!cancelled) setPyqChapters(data);
-      })
-      .catch(() => {
-        if (!cancelled) setPyqChapters([]);
+      .catch(() => [] as ChapterPYQ[]);
+    const dbPromise = listPyqChapters({ data: { subject: selectedSubject } }).catch(
+      () => [] as ChapterPYQ[],
+    );
+    Promise.all([staticPromise, dbPromise])
+      .then(([staticChapters, dbChapters]) => {
+        if (cancelled) return;
+        setPyqChapters(mergeVaultChapters(staticChapters, dbChapters) as ChapterPYQ[]);
       })
       .finally(() => {
         if (!cancelled) setLoadingQuestions(false);
