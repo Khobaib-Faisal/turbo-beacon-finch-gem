@@ -199,6 +199,12 @@ export function DeskApp() {
   const [selectedSubject, setSelectedSubject] = useState<SubjectId>("physics");
   const [pyqChapters, setPyqChapters] = useState<ChapterPYQ[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [pyqView, setPyqView] = useState<"vault" | "dashboard">("vault");
+  const [dashboardSubject, setDashboardSubject] = useState<SubjectId | null>(null);
+  const [dashboardChapters, setDashboardChapters] = useState<ChapterPYQ[]>([]);
+  const [dashboardLoaded, setDashboardLoaded] = useState(false);
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   // PYQ Section Navigation states
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
@@ -246,6 +252,40 @@ export function DeskApp() {
       cancelled = true;
     };
   }, [selectedSubject]);
+
+  useEffect(() => {
+    if (activeTab !== "pyq" || pyqView !== "dashboard" || dashboardLoaded) return;
+    let cancelled = false;
+    setLoadingDashboard(true);
+    setDashboardError(null);
+    Promise.all(
+      SUBJECTS.map(async ({ id }) => {
+        const [staticChapters, dbChapters] = await Promise.all([
+          fetch(`/data/${id}.json`)
+            .then((response) => response.ok ? response.json() as Promise<ChapterPYQ[]> : [])
+            .catch(() => [] as ChapterPYQ[]),
+          listPyqChapters({ data: { subject: id } }).catch(() => [] as ChapterPYQ[]),
+        ]);
+        return mergeVaultChapters(staticChapters, dbChapters);
+      }),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        setDashboardChapters(results.flat() as ChapterPYQ[]);
+        setDashboardLoaded(true);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setDashboardError(messageOf(error));
+        setDashboardLoaded(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDashboard(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, pyqView, dashboardLoaded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -347,6 +387,23 @@ export function DeskApp() {
     setIsChecked(false);
   }
 
+  const solvedIdSet = new Set(solvedIds);
+  const dashboardSubjectTotals = SUBJECTS.map((subject) => ({
+    ...subject,
+    solved: dashboardChapters
+      .filter((chapter) => chapter.subject === subject.id)
+      .reduce((total, chapter) => total + chapter.questions.filter((question) => solvedIdSet.has(question.id)).length, 0),
+  }));
+  const dashboardSolvedChapters = dashboardSubject
+    ? dashboardChapters
+        .filter((chapter) => chapter.subject === dashboardSubject)
+        .map((chapter) => ({
+          ...chapter,
+          solved: chapter.questions.filter((question) => solvedIdSet.has(question.id)).length,
+        }))
+        .filter((chapter) => chapter.solved > 0)
+        .sort((a, b) => b.solved - a.solved || a.chapter.localeCompare(b.chapter))
+    : [];
   const currentChapterObj = pyqChapters.find((c) => c.chapter === selectedChapter);
   const chapterYearOptions = currentChapterObj
     ? [...new Set(currentChapterObj.questions.map((question) => question.year).filter((year): year is number => Number.isInteger(year)))].sort((a, b) => b - a)
@@ -602,9 +659,119 @@ export function DeskApp() {
       {/* TAB 2: PYQ VAULT */}
       {activeTab === "pyq" && (
         <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
-          
+          <div className="mb-4 flex gap-2 border-b border-line pb-3" role="tablist" aria-label="PYQ Vault sections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={pyqView === "vault"}
+              onClick={() => {
+                setPyqView("vault");
+                setDashboardSubject(null);
+                setSelectedChapter(null);
+                setActiveQuestionIdx(null);
+              }}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold ${pyqView === "vault" ? "bg-accent text-accent-ink" : "bg-bg text-muted hover:text-fg"}`}
+            >
+              Questions
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={pyqView === "dashboard"}
+              onClick={() => {
+                setPyqView("dashboard");
+                setDashboardSubject(null);
+                setSelectedChapter(null);
+                setActiveQuestionIdx(null);
+              }}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold ${pyqView === "dashboard" ? "bg-accent text-accent-ink" : "bg-bg text-muted hover:text-fg"}`}
+            >
+              Dashboard
+            </button>
+          </div>
+
+          {pyqView === "dashboard" ? (
+            <div>
+              {dashboardSubject ? (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setDashboardSubject(null)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-muted hover:text-fg"
+                  >
+                    <ArrowLeft className="size-4" /> Back to subjects
+                  </button>
+                  <h2 className="mt-3 text-lg font-semibold text-fg">
+                    {SUBJECTS.find((subject) => subject.id === dashboardSubject)?.name} · Solved by chapter
+                  </h2>
+                  <p className="mt-1 text-xs text-muted">
+                    Chapters with no solved questions are hidden.
+                  </p>
+                  {loadingDashboard ? (
+                    <p className="mt-6 text-center text-xs text-muted animate-pulse">Loading your progress…</p>
+                  ) : dashboardError ? (
+                    <p className="mt-6 text-xs text-red-400">{dashboardError}</p>
+                  ) : dashboardSolvedChapters.length === 0 ? (
+                    <p className="mt-6 rounded-xl border border-dashed border-line p-6 text-center text-xs text-muted">
+                      No solved questions in this subject yet.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-2">
+                      {dashboardSolvedChapters.map((chapter) => (
+                        <button
+                          key={chapter.chapter}
+                          type="button"
+                          onClick={() => {
+                            setPyqChapters(dashboardChapters.filter((item) => item.subject === dashboardSubject));
+                            setSelectedSubject(dashboardSubject);
+                            setSelectedChapter(chapter.chapter);
+                            setSelectedPyqYear("all");
+                            setActiveQuestionIdx(null);
+                            setPyqView("vault");
+                            setDashboardSubject(null);
+                          }}
+                          className="flex w-full items-center justify-between rounded-xl border border-line bg-bg p-4 text-left transition hover:border-accent hover:bg-raised/40"
+                        >
+                          <span className="font-semibold text-sm text-fg">{chapter.chapter}</span>
+                          <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
+                            {chapter.solved} solved
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <h2 className="text-lg font-semibold text-fg">PYQ Solved Dashboard</h2>
+                  <p className="mt-1 text-xs text-muted">Your solved questions by subject. Select a subject to see chapter progress.</p>
+                  {loadingDashboard ? (
+                    <p className="mt-6 text-center text-xs text-muted animate-pulse">Loading your progress…</p>
+                  ) : dashboardError ? (
+                    <p className="mt-6 text-xs text-red-400">{dashboardError}</p>
+                  ) : (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      {dashboardSubjectTotals.map((subject) => (
+                        <button
+                          key={subject.id}
+                          type="button"
+                          onClick={() => setDashboardSubject(subject.id)}
+                          className="rounded-xl border border-line bg-bg p-4 text-left transition hover:border-accent hover:bg-raised/40"
+                        >
+                          <p className="text-sm font-semibold text-fg">{subject.name}</p>
+                          <p className="mt-2 text-2xl font-bold tabular-nums text-accent">{subject.solved}</p>
+                          <p className="text-xs text-muted">questions solved</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : null}
+
           {/* LEVEL 1: SUBJECT SELECTOR + CHAPTERS */}
-          {!selectedChapter && (
+          {pyqView === "vault" && !selectedChapter && (
             <div>
               <div className="flex items-center justify-between border-b border-line pb-4">
                 <div>
@@ -672,7 +839,7 @@ export function DeskApp() {
           )}
 
           {/* LEVEL 2: QUESTION LIST FOR SELECTED CHAPTER */}
-          {selectedChapter && currentChapterObj && activeQuestionIdx === null && (
+          {pyqView === "vault" && selectedChapter && currentChapterObj && activeQuestionIdx === null && (
             <div>
               <div className="flex items-center justify-between border-b border-line pb-4">
                 <button
@@ -738,7 +905,7 @@ export function DeskApp() {
           )}
 
           {/* LEVEL 3: SINGLE QUESTION FOCUS VIEWER */}
-          {selectedChapter && currentChapterObj && activeQuestion && activeQuestionIdx !== null && (
+          {pyqView === "vault" && selectedChapter && currentChapterObj && activeQuestion && activeQuestionIdx !== null && (
             <div>
               <div className="flex items-center justify-between border-b border-line pb-4">
                 <button
