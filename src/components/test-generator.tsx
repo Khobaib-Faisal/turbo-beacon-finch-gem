@@ -65,6 +65,7 @@ export function TestGenerator() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [officialPaper, setOfficialPaper] = useState(false);
   const [image, setImage] = useState<{ id: string; url: string | null } | null>(null);
 
   useEffect(() => {
@@ -250,6 +251,7 @@ export function TestGenerator() {
     }
 
     setRun(shuffle(selected));
+    setOfficialPaper(mode === "jee-main");
     setAnswers({});
     setCurrentIndex(0);
     setSecondsLeft(minutes * 60);
@@ -269,6 +271,7 @@ export function TestGenerator() {
     setCurrentIndex(0);
     setSecondsLeft(0);
     setSubmitted(false);
+    setOfficialPaper(false);
     setImage(null);
   }
 
@@ -288,7 +291,7 @@ export function TestGenerator() {
     const attempted = run.length - result.unanswered;
     const marked = run.filter((question) => answers[question.id]?.review).length;
     const options = active?.options?.length ? active.options : ["A", "B", "C", "D"];
-    const isFullPaper = run.length === 75;
+    const isFullPaper = officialPaper;
 
     return (
       <section className="mt-4 space-y-4 animate-in fade-in duration-200">
