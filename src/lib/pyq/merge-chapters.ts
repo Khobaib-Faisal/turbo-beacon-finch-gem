@@ -11,6 +11,8 @@ export type VaultQuestion = {
   options?: string[];
   correctAnswer: number;
   explanation: string;
+  answerVerified?: boolean;
+  answerAvailable?: boolean;
 };
 
 export type VaultChapter = {

@@ -223,6 +223,7 @@ export const listPyqChapters = createServerFn({ method: "GET" })
         pageNumber: row.page_number,
         needsReview: Boolean(row.needs_review) || isEmpty,
         answerVerified: Boolean(row.answer_verified),
+        answerAvailable: row.correct_answer !== null && row.correct_answer.trim() !== "",
       });
     }
     return [...byChapter.values()];

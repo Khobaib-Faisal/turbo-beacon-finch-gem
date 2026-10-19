@@ -82,5 +82,6 @@ export type ChapterBundle = {
     pageNumber?: number | null;
     needsReview?: boolean;
     answerVerified?: boolean;
+    answerAvailable?: boolean;
   }>;
 };
