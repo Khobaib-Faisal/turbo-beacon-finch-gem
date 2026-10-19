@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Check, Clock3, RotateCcw, Send, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BrainCircuit, ExternalLink, History, Layers3, RefreshCw, ShieldCheck } from "lucide-react";
+import { createTestAttempt, listTestAttempts, type TestAttempt } from "@/lib/jee/test-attempts";
 import { getPyqQuestionImage, listPyqChapters } from "@/lib/pyq/api";
 import { mergeVaultChapters, type VaultChapter, type VaultQuestion } from "@/lib/pyq/merge-chapters";
 import type { SubjectId } from "@/lib/jee/types";
@@ -10,10 +11,9 @@ const SUBJECTS: Array<{ id: SubjectId; name: string }> = [
   { id: "maths", name: "Mathematics" },
 ];
 
-type TestQuestion = VaultQuestion & { subject: SubjectId; chapter: string };
-type TestAnswer = { choice: number | null; numeric: string; review: boolean };
-type TestMode = "jee-main" | "custom";
-type SubjectFilter = SubjectId | "all";
+type BankQuestion = VaultQuestion & { subject: SubjectId; chapter: string };
+type Mode = "custom" | "jee-main";
+type ChapterSelections = Partial<Record<SubjectId, string[]>>;
 
 function shuffle<T>(items: T[]): T[] {
   const result = [...items];
@@ -29,658 +29,373 @@ function usable(question: VaultQuestion): boolean {
   const stem = question.question?.trim() ?? "";
   const readable = visual || (stem.length >= 20 && !/\[Extraction incomplete|unreadable|see page/i.test(stem));
   const answerPresent = question.answerAvailable !== false && Number.isFinite(question.correctAnswer);
-  const validKey =
-    question.type === "integer" ||
+  const validKey = question.type === "integer" ||
     (Number.isInteger(question.correctAnswer) && question.correctAnswer >= 0 && question.correctAnswer <= 3);
   const hasChoices = question.type === "integer" || visual || (question.options?.length ?? 0) >= 2;
   return readable && answerPresent && validKey && hasChoices;
 }
 
-function clock(seconds: number): string {
-  const parts = [
-    Math.floor(seconds / 3600),
-    Math.floor((seconds % 3600) / 60),
-    seconds % 60,
-  ];
-  return parts.map((part) => String(part).padStart(2, "0")).join(":");
+function dateLabel(value: string | null): string {
+  if (!value) return "In progress";
+  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-function blankAnswer(): TestAnswer {
-  return { choice: null, numeric: "", review: false };
+function formatClock(seconds: number): string {
+  const bounded = Math.max(0, seconds);
+  return [Math.floor(bounded / 3600), Math.floor((bounded % 3600) / 60), bounded % 60]
+    .map((part) => String(part).padStart(2, "0")).join(":");
 }
 
-export function TestGenerator() {
+function aiSummary(attempt: TestAttempt): string {
+  const analysis = attempt.analysis;
+  if (!analysis) return `Please analyze my JEE PYQ test titled "${attempt.title}". It is not submitted yet.`;
+  const subjectLines = SUBJECTS.map(({ id, name }) => {
+    const item = analysis.subjects[id];
+    return `${name}: ${item.correct}/${item.total} correct, ${item.incorrect} wrong, ${item.unanswered} unanswered, ${Math.round(item.seconds / 60)} min spent.`;
+  }).join("\n");
+  const wrong = analysis.questions.filter((question) => question.isCorrect === false).slice(0, 25);
+  const wrongLines = wrong.map((question) =>
+    `- ${question.subject} / ${question.chapter}: ${question.question.slice(0, 700)} | chosen: ${question.type === "mcq" ? String.fromCharCode(65 + (question.answer.choice ?? 0)) : question.answer.numeric} | correct: ${question.type === "mcq" ? String.fromCharCode(65 + question.correctAnswer) : question.correctAnswer} | ${question.explanation.slice(0, 400)}`
+  ).join("\n");
+  return `Analyze my JEE test "${attempt.title}" from ${dateLabel(attempt.submittedAt)}. Score ${analysis.score}/${analysis.maxScore}; ${analysis.correct} correct, ${analysis.incorrect} wrong, ${analysis.unanswered} unanswered. Total time: ${formatClock(analysis.elapsedSeconds)}.\nSubject time and results:\n${subjectLines}\nQuestions I got wrong:\n${wrongLines || "None"}\nPlease identify patterns in my mistakes, give practical next steps, and explain which chapters I should revise first.`;
+}
+
+export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void }) {
   const [chapters, setChapters] = useState<VaultChapter[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [mode, setMode] = useState<TestMode>("jee-main");
-  const [subjectFilter, setSubjectFilter] = useState<SubjectFilter>("all");
-  const [chapterFilter, setChapterFilter] = useState("all");
+  const [mode, setMode] = useState<Mode>("custom");
+  const [selectedSubjects, setSelectedSubjects] = useState<SubjectId[]>(["physics", "chemistry", "maths"]);
+  const [chapterSelections, setChapterSelections] = useState<ChapterSelections>({});
   const [questionCount, setQuestionCount] = useState(30);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [history, setHistory] = useState<TestAttempt[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
-  const [run, setRun] = useState<TestQuestion[] | null>(null);
-  const [answers, setAnswers] = useState<Record<string, TestAnswer>>({});
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [secondsLeft, setSecondsLeft] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
-  const [officialPaper, setOfficialPaper] = useState(false);
-  const [image, setImage] = useState<{ id: string; url: string | null } | null>(null);
+  const refreshHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      setHistory(await listTestAttempts());
+      setHistoryError(null);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "Could not load saved test history.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     Promise.all(
       SUBJECTS.map(async ({ id }) => {
         const [staticChapters, dbChapters] = await Promise.all([
           fetch("/data/" + id + ".json")
-            .then((response) => (response.ok ? (response.json() as Promise<VaultChapter[]>) : []))
+            .then((response) => response.ok ? response.json() as Promise<VaultChapter[]> : [])
             .catch(() => [] as VaultChapter[]),
           listPyqChapters({ data: { subject: id } }).catch(() => [] as VaultChapter[]),
         ]);
         return mergeVaultChapters(staticChapters, dbChapters);
       }),
-    )
-      .then((results) => {
-        if (!cancelled) {
-          setChapters(results.flat());
-          setLoadError(null);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : "Could not load the PYQ vault.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const questionBank = useMemo(
-    () =>
-      chapters.flatMap((chapter) =>
-        chapter.questions
-          .filter(usable)
-          .map((question) => ({ ...question, subject: chapter.subject, chapter: chapter.chapter })),
-      ),
-    [chapters],
-  );
-
-  const bankCounts = useMemo(
-    () =>
-      Object.fromEntries(
-        SUBJECTS.map(({ id }) => {
-          const items = questionBank.filter((question) => question.subject === id);
-          return [
-            id,
-            {
-              total: items.length,
-              mcq: items.filter((question) => question.type === "mcq").length,
-              numerical: items.filter((question) => question.type === "integer").length,
-            },
-          ];
-        }),
-      ) as Record<SubjectId, { total: number; mcq: number; numerical: number }>,
-    [questionBank],
-  );
-
-  const customPool = useMemo(
-    () =>
-      questionBank.filter(
-        (question) =>
-          (subjectFilter === "all" || question.subject === subjectFilter) &&
-          (chapterFilter === "all" ||
-            question.subject + "|" + question.chapter === chapterFilter),
-      ),
-    [questionBank, subjectFilter, chapterFilter],
-  );
-
-  const chapterOptions = useMemo(
-    () =>
-      chapters
-        .filter((chapter) => subjectFilter === "all" || chapter.subject === subjectFilter)
-        .filter((chapter) => chapter.questions.some(usable))
-        .map((chapter) => ({
-          value: chapter.subject + "|" + chapter.chapter,
-          subject: SUBJECTS.find((item) => item.id === chapter.subject)?.name ?? chapter.subject,
-          chapter: chapter.chapter,
-          count: chapter.questions.filter(usable).length,
-        })),
-    [chapters, subjectFilter],
-  );
-
-  const active = run?.[currentIndex] ?? null;
-  const activeAnswer = active ? answers[active.id] ?? blankAnswer() : blankAnswer();
-  const activeVisual = Boolean(active?.hasVisualImage || active?.visualQuestion || active?.imageUrl);
+    ).then((results) => {
+      if (!cancelled) {
+        setChapters(results.flat());
+        setLoadError(null);
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : "Could not load the PYQ vault.");
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    void refreshHistory();
+    return () => { cancelled = true; };
+  }, [refreshHistory]);
 
   useEffect(() => {
-    let cancelled = false;
-    setImage(null);
-    if (!active) return;
-    if (!active.hasVisualImage) {
-      if (active.imageUrl) setImage({ id: active.id, url: active.imageUrl });
+    const update = () => { if (document.visibilityState === "visible") void refreshHistory(); };
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [refreshHistory]);
+
+  const bank = useMemo(() => chapters.flatMap((chapter) =>
+    chapter.questions.filter(usable).map((question) => ({
+      ...question, subject: chapter.subject, chapter: chapter.chapter,
+    })),
+  ), [chapters]);
+
+  const chapterOptions = useMemo(() => Object.fromEntries(
+    SUBJECTS.map(({ id }) => [
+      id,
+      [...new Set(chapters.filter((chapter) => chapter.subject === id && chapter.questions.some(usable))
+        .map((chapter) => chapter.chapter))].sort((a, b) => a.localeCompare(b)),
+    ]),
+  ) as Record<SubjectId, string[]>, [chapters]);
+
+  const selectedPool = useMemo(() => bank.filter((question) => {
+    if (!selectedSubjects.includes(question.subject)) return false;
+    const chaptersForSubject = chapterSelections[question.subject];
+    return chaptersForSubject === undefined || chaptersForSubject.includes(question.chapter);
+  }), [bank, selectedSubjects, chapterSelections]);
+
+  const countsBySubject = useMemo(() => Object.fromEntries(SUBJECTS.map(({ id }) => {
+    const scoped = selectedPool.filter((question) => question.subject === id);
+    return [id, {
+      total: scoped.length,
+      mcq: scoped.filter((question) => question.type === "mcq").length,
+      numerical: scoped.filter((question) => question.type === "integer").length,
+    }];
+  })) as Record<SubjectId, { total: number; mcq: number; numerical: number }>, [selectedPool]);
+
+  const balanceError = selectedSubjects.length > 0 && questionCount % selectedSubjects.length !== 0
+    ? `Choose a question count divisible by ${selectedSubjects.length} selected subject${selectedSubjects.length > 1 ? "s" : ""} for an equal split.`
+    : null;
+  const perSubject = selectedSubjects.length ? questionCount / selectedSubjects.length : 0;
+  const shortage = selectedSubjects.find((subject) => countsBySubject[subject].total < perSubject);
+  const fullReady = SUBJECTS.every(({ id }) => {
+    const pool = bank.filter((question) => question.subject === id);
+    return pool.filter((question) => question.type === "mcq").length >= 20 &&
+      pool.filter((question) => question.type === "integer").length >= 5;
+  });
+
+  function toggleSubject(subject: SubjectId) {
+    setSelectedSubjects((current) => current.includes(subject)
+      ? current.filter((item) => item !== subject)
+      : [...current, subject]);
+    setConfigError(null);
+  }
+
+  function toggleChapter(subject: SubjectId, chapter: string) {
+    setChapterSelections((current) => {
+      const existing = current[subject];
+      const all = chapterOptions[subject];
+      const chosen = existing ?? [...all];
+      const next = chosen.includes(chapter) ? chosen.filter((value) => value !== chapter) : [...chosen, chapter];
+      if (next.length === all.length) {
+        const copy = { ...current };
+        delete copy[subject];
+        return copy;
+      }
+      return { ...current, [subject]: next };
+    });
+    setConfigError(null);
+  }
+
+  async function startTest() {
+    setConfigError(null);
+    if (starting) return;
+    const subjects = mode === "jee-main" ? SUBJECTS.map((subject) => subject.id) : selectedSubjects;
+    if (subjects.length === 0) {
+      setConfigError("Select at least one subject.");
       return;
     }
-    getPyqQuestionImage({ data: { id: active.id } })
-      .then(({ imageUrl }) => {
-        if (!cancelled) setImage({ id: active.id, url: imageUrl });
-      })
-      .catch(() => {
-        if (!cancelled) setImage({ id: active.id, url: null });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [active?.id, active?.hasVisualImage, active?.imageUrl]);
-
-  useEffect(() => {
-    if (!run || submitted) return;
-    const timer = window.setInterval(() => {
-      setSecondsLeft((remaining) => Math.max(remaining - 1, 0));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [run, submitted]);
-
-  useEffect(() => {
-    if (run && secondsLeft === 0 && !submitted) setSubmitted(true);
-  }, [run, secondsLeft, submitted]);
-
-  const result = useMemo(() => {
-    if (!run) return { correct: 0, incorrect: 0, unanswered: 0, marks: 0, unverified: 0 };
-    let correct = 0;
-    let incorrect = 0;
-    let unanswered = 0;
-    let marks = 0;
-    let unverified = 0;
-    for (const question of run) {
-      const answer = answers[question.id] ?? blankAnswer();
-      const attempted = question.type === "mcq" ? answer.choice !== null : answer.numeric.trim() !== "";
-      const right =
-        question.type === "mcq"
-          ? answer.choice === question.correctAnswer
-          : Number.isInteger(Number(answer.numeric)) && Number(answer.numeric) === question.correctAnswer;
-      if (!attempted) unanswered += 1;
-      else if (right) {
-        correct += 1;
-        marks += 4;
-      } else {
-        incorrect += 1;
-        marks -= 1;
-      }
-      if (question.answerVerified === false) unverified += 1;
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      setConfigError("Allow pop-ups for this site so the test can open in its own tab.");
+      return;
     }
-    return { correct, incorrect, unanswered, marks, unverified };
-  }, [run, answers]);
-
-  function updateAnswer(question: TestQuestion, patch: Partial<TestAnswer>) {
-    setAnswers((previous) => ({
-      ...previous,
-      [question.id]: { ...(previous[question.id] ?? blankAnswer()), ...patch },
-    }));
-  }
-
-  function generate() {
-    setConfigError(null);
-    let selected: TestQuestion[] = [];
-    let minutes = durationMinutes;
-
-    if (mode === "jee-main") {
-      for (const subject of SUBJECTS) {
-        const pool = questionBank.filter((question) => question.subject === subject.id);
-        const mcq = shuffle(pool.filter((question) => question.type === "mcq"));
-        const numerical = shuffle(pool.filter((question) => question.type === "integer"));
-        if (mcq.length < 20 || numerical.length < 5) {
-          setConfigError(
-            subject.name + " needs 20 MCQs and 5 numerical PYQs with answer keys. Available: " +
-              mcq.length + " MCQs, " + numerical.length + " numerical.",
-          );
-          return;
+    popup.document.title = "Preparing your test…";
+    popup.document.body.innerHTML = '<main style="font:16px system-ui;margin:12vh auto;max-width:520px;padding:24px;color:#f3ecdf;background:#14120e"><p>Preparing your test…</p><p>You can keep this tab open while the test loads.</p></main>';
+    popup.opener = null;
+    setStarting(true);
+    try {
+      let selected: BankQuestion[] = [];
+      if (mode === "jee-main") {
+        for (const subject of SUBJECTS) {
+          const pool = bank.filter((question) => question.subject === subject.id);
+          const mcq = shuffle(pool.filter((question) => question.type === "mcq"));
+          const numerical = shuffle(pool.filter((question) => question.type === "integer"));
+          if (mcq.length < 20 || numerical.length < 5) {
+            throw new Error(`${subject.name} needs 20 usable MCQs and 5 usable numerical PYQs. Available: ${mcq.length} MCQs and ${numerical.length} numerical.`);
+          }
+          selected.push(...mcq.slice(0, 20), ...numerical.slice(0, 5));
         }
-        selected.push(...mcq.slice(0, 20), ...numerical.slice(0, 5));
+      } else {
+        if (balanceError) throw new Error(balanceError);
+        if (shortage) throw new Error(`${SUBJECTS.find((item) => item.id === shortage)?.name} has only ${countsBySubject[shortage].total} usable questions. Select fewer questions or more chapters.`);
+        for (const subject of subjects) {
+          selected.push(...shuffle(selectedPool.filter((question) => question.subject === subject)).slice(0, perSubject));
+        }
       }
-      minutes = 180;
-    } else {
-      if (customPool.length < questionCount) {
-        setConfigError("This selection has " + customPool.length + " usable, keyed PYQs. Lower the question count or add more questions.");
-        return;
-      }
-      selected = shuffle(customPool).slice(0, questionCount);
+      selected = shuffle(selected);
+      const title = mode === "jee-main" ? "JEE Main Paper 1 · 75 Questions" : `Custom PYQ test · ${questionCount} questions`;
+      const duration = mode === "jee-main" ? 180 : durationMinutes;
+      const { id } = await createTestAttempt({
+        data: {
+          title,
+          mode,
+          durationSeconds: duration * 60,
+          questions: selected,
+        },
+      });
+      popup.location.replace("/test/" + encodeURIComponent(id));
+    } catch (error) {
+      popup.close();
+      setConfigError(error instanceof Error ? error.message : "Could not start this test.");
+    } finally {
+      setStarting(false);
     }
-
-    setRun(shuffle(selected));
-    setOfficialPaper(mode === "jee-main");
-    setAnswers({});
-    setCurrentIndex(0);
-    setSecondsLeft(minutes * 60);
-    setSubmitted(false);
-    setImage(null);
-  }
-
-  function submit() {
-    if (!submitted && !window.confirm("Submit this test now? Unanswered questions will score 0.")) return;
-    setSubmitted(true);
-    setSecondsLeft(0);
-  }
-
-  function reset() {
-    setRun(null);
-    setAnswers({});
-    setCurrentIndex(0);
-    setSecondsLeft(0);
-    setSubmitted(false);
-    setOfficialPaper(false);
-    setImage(null);
   }
 
   const outer = "rounded-2xl border border-line bg-surface p-4 sm:p-5";
   const button = "min-h-11 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-ink disabled:opacity-40";
 
   if (loading) {
-    return (
-      <section className={outer}>
-        <h2 className="text-lg font-semibold text-fg">JEE Main Test Generator</h2>
-        <p className="mt-3 text-sm text-muted">Loading the PYQ vault…</p>
-      </section>
-    );
+    return <section className={outer}><h2 className="text-lg font-semibold text-fg">JEE Main Test Generator</h2><p className="mt-3 text-sm text-muted">Loading your PYQ vault…</p></section>;
   }
-
-  if (run) {
-    const attempted = run.length - result.unanswered;
-    const marked = run.filter((question) => answers[question.id]?.review).length;
-    const options = active?.options?.length ? active.options : ["A", "B", "C", "D"];
-    const isFullPaper = officialPaper;
-
-    return (
-      <section className="mt-4 space-y-4 animate-in fade-in duration-200">
-        <div className={outer}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
-            <div>
-              <p className="text-xs uppercase tracking-wider text-muted">
-                {isFullPaper ? "JEE Main 2026 · Paper 1" : "Custom PYQ practice"}
-              </p>
-              <h2 className="mt-1 text-lg font-semibold text-fg">{submitted ? "Test complete" : "Timed test"}</h2>
-            </div>
-            <div
-              aria-live="polite"
-              className={
-                "flex items-center gap-2 rounded-xl border px-3 py-2 font-mono text-sm tabular-nums " +
-                (secondsLeft <= 300 && !submitted ? "border-accent bg-accent/10 text-accent" : "border-line bg-bg text-fg")
-              }
-            >
-              <Clock3 className="size-4" /> {clock(secondsLeft)}
-            </div>
-          </div>
-
-          {submitted ? (
-            <div className="mt-4 grid gap-3 sm:grid-cols-4">
-              {[
-                ["Score", result.marks + " / " + run.length * 4],
-                ["Correct", String(result.correct)],
-                ["Incorrect", String(result.incorrect)],
-                ["Unanswered", String(result.unanswered)],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-line bg-bg p-3">
-                  <p className="text-xs text-muted">{label}</p>
-                  <p className="mt-1 text-xl font-semibold tabular-nums text-fg">{value}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-              <span>{run.length} questions</span>
-              <span>{attempted} attempted</span>
-              <span>{marked} marked for review</span>
-              <span>+4 correct · −1 incorrect</span>
-            </div>
-          )}
-
-          {submitted && result.unverified > 0 ? (
-            <p className="mt-3 rounded-xl border border-line bg-bg px-3 py-2 text-xs text-muted">
-              Provisional score: answer keys for {result.unverified} question(s) have not been verified.
-            </p>
-          ) : null}
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_250px]">
-          <div className={outer}>
-            {active ? (
-              <>
-                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line pb-3">
-                  <div>
-                    <p className="text-xs text-muted">
-                      {SUBJECTS.find((subject) => subject.id === active.subject)?.name} · {active.chapter}
-                    </p>
-                    <h3 className="mt-1 font-semibold text-fg">
-                      Question {currentIndex + 1}
-                      <span className="ml-2 text-xs font-normal text-muted">
-                        {active.type === "mcq" ? "Multiple choice" : "Numerical value"}
-                      </span>
-                    </h3>
-                  </div>
-                  {active.answerVerified === false ? (
-                    <span className="rounded-lg border border-line px-2 py-1 text-[11px] text-muted">Key unverified</span>
-                  ) : null}
-                </div>
-
-                <div className="mt-4">
-                  {activeVisual ? (
-                    image?.id === active.id && image.url ? (
-                      <img
-                        src={image.url}
-                        alt={"Question " + (currentIndex + 1) + " with original math and diagram"}
-                        className="mx-auto max-h-[28rem] w-full rounded-xl border border-line bg-bg object-contain"
-                      />
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-line p-5 text-center text-sm text-muted">
-                        {image?.id === active.id ? "Question image could not be loaded." : "Loading question image…"}
-                      </div>
-                    )
-                  ) : (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg">{active.question}</p>
-                  )}
-
-                  {active.type === "mcq" ? (
-                    <div className="mt-5 grid gap-2">
-                      {options.map((option, index) => {
-                        const selected = activeAnswer.choice === index;
-                        const correct = active.correctAnswer === index;
-                        let style = "border-line bg-bg text-fg hover:border-muted";
-                        if (submitted && correct) style = "border-accent bg-accent/10 text-fg";
-                        else if (selected) style = "border-accent bg-accent/10 text-fg";
-                        return (
-                          <button
-                            type="button"
-                            key={index}
-                            disabled={submitted}
-                            onClick={() => updateAnswer(active, { choice: index })}
-                            className={"flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm " + style}
-                          >
-                            <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-line text-xs font-semibold">
-                              {String.fromCharCode(65 + index)}
-                            </span>
-                            {active.hasVisualImage || active.visualQuestion ? null : <span>{option}</span>}
-                            {submitted && correct ? <Check className="ml-auto size-4 shrink-0" /> : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <label className="mt-5 block max-w-sm text-xs font-medium text-muted">
-                      Numerical answer
-                      <input
-                        type="number"
-                        step="1"
-                        inputMode="numeric"
-                        disabled={submitted}
-                        value={activeAnswer.numeric}
-                        onChange={(event) => updateAnswer(active, { numeric: event.target.value })}
-                        placeholder="Enter an integer"
-                        className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-base text-fg"
-                      />
-                    </label>
-                  )}
-
-                  {submitted ? (
-                    <div className="mt-5 rounded-xl border border-line bg-bg p-4 text-sm">
-                      <p className="font-semibold text-fg">
-                        Answer: {active.type === "mcq" ? String.fromCharCode(65 + active.correctAnswer) : active.correctAnswer}
-                      </p>
-                      {active.explanation ? (
-                        <p className="mt-2 whitespace-pre-wrap leading-relaxed text-muted">{active.explanation}</p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => updateAnswer(active, { review: !activeAnswer.review })}
-                      className="mt-4 min-h-10 rounded-xl border border-line bg-bg px-3 text-xs font-medium text-fg"
-                    >
-                      {activeAnswer.review ? "Remove review mark" : "Mark for review"}
-                    </button>
-                  )}
-                </div>
-
-                <div className="mt-5 flex items-center justify-between gap-2 border-t border-line pt-4">
-                  <button
-                    type="button"
-                    disabled={currentIndex === 0}
-                    onClick={() => setCurrentIndex((index) => Math.max(index - 1, 0))}
-                    className="min-h-11 rounded-xl border border-line bg-bg px-4 text-sm text-fg disabled:opacity-40"
-                  >
-                    Previous
-                  </button>
-                  {currentIndex < run.length - 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => setCurrentIndex((index) => Math.min(index + 1, run.length - 1))}
-                      className={button}
-                    >
-                      {submitted ? "Next answer" : "Save & Next"}
-                    </button>
-                  ) : null}
-                </div>
-              </>
-            ) : null}
-          </div>
-
-          <aside className={outer}>
-            <h3 className="font-semibold text-fg">Question palette</h3>
-            <p className="mt-1 text-xs text-muted">Choose a number to jump to a question.</p>
-            <div className="mt-4 grid grid-cols-5 gap-2">
-              {run.map((question, index) => {
-                const answer = answers[question.id] ?? blankAnswer();
-                const hasAnswer = question.type === "mcq" ? answer.choice !== null : answer.numeric.trim() !== "";
-                let style = "border-line bg-bg text-muted";
-                if (answer.review) style = "border-accent bg-accent/10 text-fg";
-                else if (hasAnswer) style = "border-line bg-raised text-fg";
-                if (index === currentIndex) style += " outline outline-2 outline-accent";
-                return (
-                  <button
-                    type="button"
-                    key={question.id}
-                    onClick={() => setCurrentIndex(index)}
-                    aria-label={"Go to question " + (index + 1)}
-                    className={"min-h-10 rounded-lg border text-xs font-semibold tabular-nums " + style}
-                  >
-                    {index + 1}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-4 space-y-1 border-t border-line pt-3 text-xs text-muted">
-              <p>Answered: {attempted} / {run.length}</p>
-              <p>Review marks: {marked}</p>
-            </div>
-            {!submitted ? (
-              <button
-                type="button"
-                onClick={submit}
-                className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised px-4 text-sm font-semibold text-fg"
-              >
-                <Send className="size-4" /> Submit test
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={reset}
-                className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised px-4 text-sm font-semibold text-fg"
-              >
-                <RotateCcw className="size-4" /> Build another
-              </button>
-            )}
-          </aside>
-        </div>
-      </section>
-    );
-  }
-
-  const fullReady = SUBJECTS.every(
-    ({ id }) => bankCounts[id].mcq >= 20 && bankCounts[id].numerical >= 5,
-  );
 
   return (
-    <section className="mt-4 space-y-4 animate-in fade-in duration-200">
-      <div className={outer}>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+    <div className="mt-4 space-y-4 animate-in fade-in duration-200">
+      <section className={outer}>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted">PYQ powered</p>
-            <h2 className="mt-1 text-lg font-semibold text-fg">JEE Main Test Generator</h2>
-            <p className="mt-1 text-xs text-muted">Generate timed tests from questions in your vault.</p>
+            <h2 className="mt-1 text-lg font-semibold text-fg">Create a JEE Main test</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted">Choose chapters, balance Physics, Chemistry and Maths, set the timer, and start in a separate tab.</p>
           </div>
-          <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">
-            {questionBank.length} usable PYQs
-          </span>
+          <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">{bank.length} readable questions with answer keys</span>
         </div>
 
-        {loadError ? (
-          <p className="mt-4 rounded-xl border border-line bg-bg p-3 text-sm text-muted">{loadError}</p>
-        ) : null}
+        {loadError ? <p role="alert" className="mt-4 rounded-xl border border-line bg-bg p-3 text-sm text-muted">{loadError}</p> : null}
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => {
-              setMode("jee-main");
-              setConfigError(null);
-            }}
-            className={
-              "rounded-xl border p-4 text-left " +
-              (mode === "jee-main" ? "border-accent bg-accent/10" : "border-line bg-bg")
-            }
-          >
-            <span className="block font-semibold text-fg">JEE Main Paper 1</span>
-            <span className="mt-1 block text-xs text-muted">75 questions · 3 hours · 300 marks</span>
-            <span className="mt-2 block text-xs text-muted">Per subject: 20 MCQs + 5 numerical questions</span>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <button type="button" onClick={() => { setMode("custom"); setConfigError(null); }}
+            className={"rounded-xl border p-4 text-left " + (mode === "custom" ? "border-accent bg-accent/10" : "border-line bg-bg")}>
+            <span className="block font-semibold text-fg">Custom test</span>
+            <span className="mt-1 block text-xs text-muted">Choose your subjects, chapters, question count, and time.</span>
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode("custom");
-              setConfigError(null);
-            }}
-            className={
-              "rounded-xl border p-4 text-left " +
-              (mode === "custom" ? "border-accent bg-accent/10" : "border-line bg-bg")
-            }
-          >
-            <span className="block font-semibold text-fg">Custom PYQ test</span>
-            <span className="mt-1 block text-xs text-muted">Choose subject, chapter, question count, and time.</span>
+          <button type="button" onClick={() => { setMode("jee-main"); setConfigError(null); }}
+            className={"rounded-xl border p-4 text-left " + (mode === "jee-main" ? "border-accent bg-accent/10" : "border-line bg-bg")}>
+            <span className="block font-semibold text-fg">JEE Main Paper 1 template</span>
+            <span className="mt-1 block text-xs text-muted">75 questions · 3 hours · 25 questions per PCM subject.</span>
+            <span className="mt-1 block text-xs text-muted">Per subject: 20 MCQ + 5 numerical. {fullReady ? "Ready to generate." : "Your current vault may not have the full quota yet."}</span>
           </button>
-        </div>
-
-        <div className="mt-4 rounded-xl border border-line bg-bg p-4">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-fg">Available keyed questions</p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                {SUBJECTS.map(({ id, name }) => {
-                  const counts = bankCounts[id];
-                  const ready = counts.mcq >= 20 && counts.numerical >= 5;
-                  return (
-                    <div key={id} className="rounded-lg border border-line bg-surface px-3 py-2">
-                      <p className="text-xs font-semibold text-fg">{name}</p>
-                      <p className="mt-1 text-xs text-muted">{counts.mcq} MCQ · {counts.numerical} numerical</p>
-                      <p className="mt-1 text-[11px] text-muted">
-                        {ready ? "Full-paper quota ready" : "More questions needed for full-paper quota"}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          {!fullReady ? (
-            <p className="mt-3 text-xs text-muted">
-              A full paper requires 20 MCQs and 5 numerical PYQs with answer keys in each subject. Use Custom PYQ test with your current bank.
-            </p>
-          ) : null}
         </div>
 
         {mode === "custom" ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs font-medium text-muted">
-              Subject
-              <select
-                value={subjectFilter}
-                onChange={(event) => {
-                  setSubjectFilter(event.target.value as SubjectFilter);
-                  setChapterFilter("all");
-                  setConfigError(null);
-                }}
-                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-base text-fg"
-              >
-                <option value="all">All subjects</option>
-                {SUBJECTS.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-muted">
-              Chapter
-              <select
-                value={chapterFilter}
-                onChange={(event) => {
-                  setChapterFilter(event.target.value);
-                  setConfigError(null);
-                }}
-                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-base text-fg"
-              >
-                <option value="all">All available chapters</option>
-                {chapterOptions.map((chapter) => (
-                  <option key={chapter.value} value={chapter.value}>
-                    {subjectFilter === "all" ? chapter.subject + " · " : ""}{chapter.chapter} ({chapter.count})
-                  </option>
+          <div className="mt-4 space-y-4">
+            <fieldset>
+              <legend className="text-xs font-semibold text-fg">Subjects to include</legend>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                {SUBJECTS.map(({ id, name }) => (
+                  <label key={id} className="flex min-h-12 items-center gap-3 rounded-xl border border-line bg-bg px-3 text-sm text-fg">
+                    <input type="checkbox" checked={selectedSubjects.includes(id)} onChange={() => toggleSubject(id)} />
+                    {name}<span className="ml-auto text-xs text-muted">{countsBySubject[id].total} usable</span>
+                  </label>
                 ))}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-muted">
-              Questions
-              <input
-                type="number"
-                min="1"
-                max="200"
-                value={questionCount}
-                onChange={(event) =>
-                  setQuestionCount(Math.max(1, Math.min(200, Number(event.target.value) || 1)))
-                }
-                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-base text-fg"
-              />
-            </label>
-            <label className="text-xs font-medium text-muted">
-              Time limit
-              <select
-                value={durationMinutes}
-                onChange={(event) => setDurationMinutes(Number(event.target.value))}
-                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-base text-fg"
-              >
-                {[15, 30, 45, 60, 90, 120, 180].map((minutes) => (
-                  <option key={minutes} value={minutes}>{minutes} minutes</option>
-                ))}
-              </select>
-            </label>
-            <p className="text-xs text-muted sm:col-span-2">
-              {customPool.length} usable PYQs match this selection. Questions are shuffled for each test.
-            </p>
+              </div>
+            </fieldset>
+
+            <div className="grid gap-3 lg:grid-cols-3">
+              {SUBJECTS.filter(({ id }) => selectedSubjects.includes(id)).map(({ id, name }) => {
+                const options = chapterOptions[id];
+                const chosen = chapterSelections[id];
+                return (
+                  <fieldset key={id} className="rounded-xl border border-line bg-bg p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <legend className="text-xs font-semibold text-fg">{name} chapters</legend>
+                      <button type="button" onClick={() => setChapterSelections((current) => {
+                        const copy = { ...current }; delete copy[id]; return copy;
+                      })} className="text-[11px] font-medium text-accent">All chapters</button>
+                    </div>
+                    <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
+                      {options.length ? options.map((chapter) => (
+                        <label key={chapter} className="flex items-start gap-2 rounded-lg px-1 py-1 text-xs text-muted">
+                          <input type="checkbox" checked={chosen === undefined || chosen.includes(chapter)}
+                            onChange={() => toggleChapter(id, chapter)} className="mt-0.5" />
+                          <span>{chapter}</span>
+                        </label>
+                      )) : <p className="text-xs text-muted">No usable chapter questions yet.</p>}
+                    </div>
+                  </fieldset>
+                );
+              })}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-medium text-muted">Number of questions
+                <input type="number" min="1" max="75" value={questionCount}
+                  onChange={(event) => setQuestionCount(Math.max(1, Math.min(75, Number(event.target.value) || 1)))}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-base text-fg" />
+              </label>
+              <label className="text-xs font-medium text-muted">Time limit
+                <select value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-base text-fg">
+                  {[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="flex items-center gap-2 rounded-xl border border-line bg-bg px-3 py-2 text-xs text-muted">
+              <Layers3 className="size-4 shrink-0" />
+              <span>{questionCount} questions across {selectedSubjects.length} subjects. {selectedSubjects.length ? `${perSubject} each` : "Select a subject"}.</span>
+            </div>
+            {balanceError ? <p role="alert" className="text-sm text-muted">{balanceError}</p> : null}
+            {shortage ? <p role="alert" className="text-sm text-muted">{SUBJECTS.find((item) => item.id === shortage)?.name} has only {countsBySubject[shortage].total} usable questions for this split.</p> : null}
           </div>
-        ) : null}
+        ) : (
+          <div className="mt-4 rounded-xl border border-line bg-bg p-4">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-fg">Full-paper question pool</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  {SUBJECTS.map(({ id, name }) => {
+                    const pool = bank.filter((question) => question.subject === id);
+                    const mcq = pool.filter((question) => question.type === "mcq").length;
+                    const numerical = pool.filter((question) => question.type === "integer").length;
+                    return <div key={id} className="rounded-lg border border-line bg-surface px-3 py-2"><p className="text-xs font-semibold text-fg">{name}</p><p className="mt-1 text-xs text-muted">{mcq} MCQ · {numerical} numerical</p><p className="mt-1 text-[11px] text-muted">{mcq >= 20 && numerical >= 5 ? "Quota ready" : "More keyed questions needed"}</p></div>;
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {configError ? (
-          <p role="alert" className="mt-4 rounded-xl border border-line bg-bg p-3 text-sm text-muted">
-            {configError}
-          </p>
-        ) : null}
-
-        <button
-          type="button"
-          disabled={mode === "jee-main" ? !fullReady : customPool.length < questionCount}
-          onClick={generate}
-          className={button + " mt-4 w-full sm:w-auto"}
-        >
-          Generate {mode === "jee-main" ? "JEE Main paper" : "custom test"}
+        {configError ? <p role="alert" className="mt-4 rounded-xl border border-line bg-bg p-3 text-sm text-muted">{configError}</p> : null}
+        <button type="button" disabled={starting || (mode === "jee-main" ? !fullReady : !selectedSubjects.length || Boolean(balanceError) || Boolean(shortage))}
+          onClick={() => void startTest()} className={button + " mt-4 w-full sm:w-auto"}>
+          {starting ? "Preparing separate test tab…" : mode === "jee-main" ? "Start 75-question JEE Main test" : "Create and open custom test"}
         </button>
-      </div>
-    </section>
+      </section>
+
+      <section className={outer}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
+          <div><div className="flex items-center gap-2"><History className="size-4 text-muted" /><h2 className="font-semibold text-fg">Past tests</h2></div><p className="mt-1 text-xs text-muted">Saved with the date, score, and detailed answer analysis.</p></div>
+          <button type="button" onClick={() => void refreshHistory()} disabled={historyLoading} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-bg px-3 text-xs text-fg disabled:opacity-50"><RefreshCw className={"size-3.5 " + (historyLoading ? "animate-spin" : "")} /> Refresh</button>
+        </div>
+        {historyError ? <p role="alert" className="mt-3 text-sm text-muted">{historyError}</p> : null}
+        {historyLoading && !history.length ? <p className="mt-3 text-sm text-muted">Loading saved tests…</p> : null}
+        {!historyLoading && !history.length && !historyError ? <p className="mt-3 rounded-xl border border-dashed border-line p-4 text-sm text-muted">Completed tests will appear here with question-by-question results and timing.</p> : null}
+        {history.length ? <div className="mt-3 space-y-3">
+          {history.map((attempt) => {
+            const analysis = attempt.analysis;
+            const percent = analysis ? Math.round((analysis.score / Math.max(analysis.maxScore, 1)) * 100) : 0;
+            return <article key={attempt.id} className="rounded-xl border border-line bg-bg p-3 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-fg">{attempt.title}</h3>
+                  <p className="mt-1 text-xs text-muted">{dateLabel(attempt.submittedAt)} · {attempt.questions.length} questions · {formatClock(analysis?.elapsedSeconds ?? attempt.durationSeconds)}</p>
+                  <p className="mt-2 text-sm text-fg">{analysis?.score ?? "—"} / {analysis?.maxScore ?? "—"} marks <span className="text-muted">· {percent}% · {analysis?.correct ?? 0} right · {analysis?.incorrect ?? 0} wrong · {analysis?.unanswered ?? 0} unanswered</span></p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => window.open("/test/" + encodeURIComponent(attempt.id), "_blank")}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-xs font-medium text-fg"><ExternalLink className="size-3.5" /> View analysis</button>
+                  {onAskAi ? <button type="button" onClick={() => onAskAi(aiSummary(attempt))}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-xs font-medium text-fg"><BrainCircuit className="size-3.5" /> Ask AI about this test</button> : null}
+                </div>
+              </div>
+              {analysis ? <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {SUBJECTS.map(({ id, name }) => <div key={id} className="rounded-lg border border-line bg-surface px-3 py-2 text-xs"><div className="flex justify-between gap-2"><span className="font-semibold text-fg">{name}</span><span className="text-muted">{analysis.subjects[id].correct}/{analysis.subjects[id].total} correct</span></div><p className="mt-1 text-muted">Time spent {formatClock(analysis.subjects[id].seconds)}</p></div>)}
+              </div> : null}
+            </article>;
+          })}
+        </div> : null}
+      </section>
+    </div>
   );
 }
