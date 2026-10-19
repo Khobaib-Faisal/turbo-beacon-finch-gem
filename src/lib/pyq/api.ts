@@ -230,3 +230,63 @@ export const getPyqImportStats = createServerFn({ method: "GET" })
       needsRepair: bad[0]?.n ?? 0,
     };
   });
+
+/** List distinct chapters in DB for admin cleanup. */
+export const listPyqDbChapters = createServerFn({ method: "GET" })
+  .middleware([adminMiddleware])
+  .handler(async () => {
+    const sql = await getSql();
+    const rows = await sql<{
+      subject: string;
+      chapter: string;
+      n: number;
+      junk: number;
+    }>`
+      select subject, chapter, count(*)::int as n,
+        count(*) filter (
+          where question_text = '' or question_text is null
+             or length(trim(question_text)) < 20
+             or question_text ilike '%extraction incomplete%'
+             or question_text ilike '%see page%'
+        )::int as junk
+      from pyq_questions
+      group by subject, chapter
+      order by subject, chapter
+    `;
+    return rows;
+  });
+
+/** Delete an entire chapter's imported questions (admin only). */
+export const deletePyqChapter = createServerFn({ method: "POST" })
+  .middleware([adminMiddleware])
+  .validator((input: { subject: SubjectId; chapter: string }) => {
+    if (!input?.chapter || !isSubject(input.subject)) throw new Error("Need subject and chapter.");
+    return { subject: input.subject, chapter: input.chapter.trim().slice(0, 200) };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const rows = await sql.query<{ id: string }>(
+      `delete from pyq_questions where subject = $1 and chapter = $2 returning id`,
+      [data.subject, data.chapter],
+    );
+    return { deleted: rows.length, chapter: data.chapter, subject: data.subject };
+  });
+
+/** Remove unreadable / junk rows and bogus chapter names like "1/3". */
+export const deletePyqJunk = createServerFn({ method: "POST" })
+  .middleware([adminMiddleware])
+  .handler(async () => {
+    const sql = await getSql();
+    const rows = await sql.query<{ id: string }>(
+      `delete from pyq_questions
+       where question_text = '' or question_text is null
+          or length(trim(question_text)) < 20
+          or question_text ilike '%extraction incomplete%'
+          or question_text ilike '%see page%'
+          or chapter ~ '^[0-9]+\\s*/\\s*[0-9]+$'
+          or chapter ~ '^[0-9]+$'
+       returning id`,
+      [],
+    );
+    return { deleted: rows.length };
+  });
