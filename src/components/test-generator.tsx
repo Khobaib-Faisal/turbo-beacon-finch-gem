@@ -181,7 +181,7 @@ export function TestGenerator() {
       setSecondsLeft((remaining) => Math.max(remaining - 1, 0));
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [Boolean(run && !submitted)]);
+  }, [run, submitted]);
 
   useEffect(() => {
     if (run && secondsLeft === 0 && !submitted) setSubmitted(true);
