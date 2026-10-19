@@ -6,6 +6,8 @@ export type VaultQuestion = {
   type: "mcq" | "integer";
   question: string;
   imageUrl?: string;
+  visualQuestion?: boolean;
+  hasVisualImage?: boolean;
   options?: string[];
   correctAnswer: number;
   explanation: string;

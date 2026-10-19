@@ -68,6 +68,15 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
         if (typeof q.questionText !== "string") {
           throw new Error("questionText must be a string.");
         }
+        if (q.questionImageUrl != null) {
+          if (
+            typeof q.questionImageUrl !== "string" ||
+            !q.questionImageUrl.startsWith("data:image/jpeg;base64,") ||
+            q.questionImageUrl.length > 300_000
+          ) {
+            throw new Error("Question image must be a JPEG crop under 300 KB.");
+          }
+        }
         if (!q.questionText.trim() && !q.needsReview) {
           throw new Error("Empty question text must be marked needsReview.");
         }
@@ -90,9 +99,10 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
           `insert into pyq_questions (
             id, subject, chapter, topic, source, question_number, type,
             question_text, options, correct_answer, explanation,
-            answer_verified, needs_review, page_number, source_pdf, external_key
+            answer_verified, needs_review, page_number, source_pdf, external_key,
+            question_image_url
           ) values (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16
+            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17
           )
           on conflict (external_key) do nothing
           returning id`,
@@ -100,6 +110,7 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
             q.questionText, optionsJson, q.correctAnswer, "", false,
             Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
+            q.questionImageUrl ?? null,
           ],
         );
         if (rows[0]) inserted += 1;
@@ -109,9 +120,10 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
           `insert into pyq_questions (
             id, subject, chapter, topic, source, question_number, type,
             question_text, options, correct_answer, explanation,
-            answer_verified, needs_review, page_number, source_pdf, external_key
+            answer_verified, needs_review, page_number, source_pdf, external_key,
+            question_image_url
           ) values (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16
+            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17
           )
           on conflict (external_key) do update set
             subject = excluded.subject,
@@ -129,12 +141,14 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             needs_review = excluded.needs_review,
             page_number = excluded.page_number,
             source_pdf = excluded.source_pdf,
+            question_image_url = coalesce(excluded.question_image_url, pyq_questions.question_image_url),
             updated_at = now()
           returning id, (xmax = 0) as is_insert`,
           [
             id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
             q.questionText, optionsJson, q.correctAnswer, "", false,
             Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
+            q.questionImageUrl ?? null,
           ],
         );
         if (rows[0]) {
@@ -162,9 +176,11 @@ export const listPyqChapters = createServerFn({ method: "GET" })
       question_text: string; options: unknown; correct_answer: string | null;
       explanation: string; page_number: number | null; needs_review: boolean;
       answer_verified: boolean;
+      question_image_url: string | null;
     }>`
       select id, subject, chapter, source, type, question_text, options,
-             correct_answer, explanation, page_number, needs_review, answer_verified
+             correct_answer, explanation, page_number, needs_review, answer_verified,
+             question_image_url
       from pyq_questions
       where subject = ${data.subject}
       order by chapter asc, question_number asc nulls last, created_at asc
@@ -196,6 +212,8 @@ export const listPyqChapters = createServerFn({ method: "GET" })
           ? `[Extraction incomplete — see PDF page ${row.page_number ?? "?"}]`
           : stem,
         options,
+        visualQuestion: Boolean(row.question_image_url),
+        hasVisualImage: Boolean(row.question_image_url),
         correctAnswer: correctAnswerToNumber(type, row.correct_answer),
         explanation:
           row.explanation ||
@@ -208,6 +226,22 @@ export const listPyqChapters = createServerFn({ method: "GET" })
       });
     }
     return [...byChapter.values()];
+  });
+
+/** Load a visual question on demand so an entire chapter of image data isn't sent at once. */
+export const getPyqQuestionImage = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: { id: string } | undefined) => {
+    const id = input?.id?.trim();
+    if (!id || id.length > 100) throw new Error("Choose a question.");
+    return { id };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const rows = await sql<{ question_image_url: string | null }>`
+      select question_image_url from pyq_questions where id = ${data.id} limit 1
+    `;
+    return { imageUrl: rows[0]?.question_image_url ?? null };
   });
 
 export const getPyqImportStats = createServerFn({ method: "GET" })

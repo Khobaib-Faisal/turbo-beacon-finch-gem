@@ -29,7 +29,7 @@ import {
   setWeakCleared,
   undoLastLecture,
 } from "@/lib/jee/api";
-import { listPyqChapters } from "@/lib/pyq/api";
+import { getPyqQuestionImage, listPyqChapters } from "@/lib/pyq/api";
 import { mergeVaultChapters } from "@/lib/pyq/merge-chapters";
 import { daysBetween, formatHours, formatLong } from "@/lib/jee/pace";
 import type { Bucket, Desk, DeskResult, DeskSettings, QuestionDay, Reward, SubjectId } from "@/lib/jee/types";
@@ -49,6 +49,8 @@ export interface QuestionItem {
   type: "mcq" | "integer";
   question: string;
   imageUrl?: string;
+  visualQuestion?: boolean;
+  hasVisualImage?: boolean;
   options?: string[];
   correctAnswer: number;
   explanation: string;
@@ -199,6 +201,7 @@ export function DeskApp() {
   // PYQ Section Navigation states
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState<number | null>(null);
+  const [loadedQuestionImage, setLoadedQuestionImage] = useState<{ id: string; url: string | null } | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [integerInput, setIntegerInput] = useState<string>("");
   const [isChecked, setIsChecked] = useState(false);
@@ -341,6 +344,32 @@ export function DeskApp() {
     setIsChecked(false);
   }
 
+  const currentChapterObj = pyqChapters.find((c) => c.chapter === selectedChapter);
+  const activeQuestion = currentChapterObj && activeQuestionIdx !== null
+    ? currentChapterObj.questions[activeQuestionIdx]
+    : null;
+  const activeQuestionImage = activeQuestion?.hasVisualImage
+    ? loadedQuestionImage?.id === activeQuestion.id
+      ? loadedQuestionImage.url
+      : null
+    : activeQuestion?.imageUrl;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadedQuestionImage(null);
+    if (!activeQuestion?.hasVisualImage) return;
+    getPyqQuestionImage({ data: { id: activeQuestion.id } })
+      .then(({ imageUrl }) => {
+        if (!cancelled) setLoadedQuestionImage({ id: activeQuestion.id, url: imageUrl });
+      })
+      .catch(() => {
+        if (!cancelled) setLoadedQuestionImage({ id: activeQuestion.id, url: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeQuestion?.id, activeQuestion?.hasVisualImage]);
+
   if (signedOut) return <RedirectToSignIn />;
   if (loading || !desk) {
     return (
@@ -360,11 +389,6 @@ export function DeskApp() {
     : questionsHit
       ? desk.streak + 1
       : desk.streak;
-
-  const currentChapterObj = pyqChapters.find((c) => c.chapter === selectedChapter);
-  const activeQuestion = currentChapterObj && activeQuestionIdx !== null 
-    ? currentChapterObj.questions[activeQuestionIdx] 
-    : null;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 pb-24 pt-4 sm:px-8">
@@ -720,16 +744,25 @@ export function DeskApp() {
               </div>
 
               <div className="mt-5 rounded-xl border border-line bg-bg p-5">
-                <p className="text-sm font-medium leading-relaxed text-fg">{activeQuestion.question}</p>
+                {!activeQuestion.visualQuestion ? (
+                  <p className="text-sm font-medium leading-relaxed text-fg">{activeQuestion.question}</p>
+                ) : null}
 
-                {/* IMAGE DISPLAY BLOCK */}
-                {activeQuestion.imageUrl && (
+                {activeQuestionImage ? (
                   <img 
-                    src={activeQuestion.imageUrl} 
-                    alt="Question Diagram" 
-                    className="mt-4 max-h-64 max-w-full rounded-lg border border-line object-contain"
+                    src={activeQuestionImage}
+                    alt={activeQuestion.visualQuestion ? `Original question from ${activeQuestion.source}` : "Question diagram"}
+                    className={activeQuestion.visualQuestion
+                      ? "mt-4 max-h-[70vh] w-full rounded-lg border border-line bg-white object-contain"
+                      : "mt-4 max-h-64 max-w-full rounded-lg border border-line object-contain"}
                   />
-                )}
+                ) : activeQuestion.visualQuestion ? (
+                  <p className="mt-4 text-sm text-muted">
+                    {loadedQuestionImage?.id === activeQuestion.id
+                      ? "Question image unavailable. Re-import this PDF page."
+                      : "Loading the preserved question…"}
+                  </p>
+                ) : null}
 
                 {activeQuestion.type === "mcq" && activeQuestion.options ? (
                   <div className="mt-5 space-y-2.5">
@@ -755,7 +788,7 @@ export function DeskApp() {
                         >
                           <span className="flex items-center gap-2.5">
                             <span className="font-bold">{String.fromCharCode(65 + optIdx)}.</span>
-                            <span>{opt}</span>
+                            {!activeQuestion.visualQuestion ? <span>{opt}</span> : null}
                           </span>
                           {isChecked && isCorrect && <CheckCircle2 className="size-4 text-green-400 shrink-0" />}
                           {isChecked && isSelected && !isCorrect && <XCircle className="size-4 text-red-400 shrink-0" />}
