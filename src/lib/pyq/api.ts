@@ -287,6 +287,10 @@ export const migratePyqImagesToObjectStorage = createServerFn({ method: "POST" }
       );
       moved += result.length;
     }
+    // Each update replaces a large toasted base64 value with a short URL.
+    // Reclaim dead tuples before the next migration batch so the project's
+    // storage cap does not fill up with obsolete inline image versions.
+    await sql.query("VACUUM (ANALYZE) pyq_questions");
     const remaining = await sql<{ n: number }>`
       select count(*)::int as n from pyq_questions
       where question_image_url like 'data:image/jpeg;base64,%'
