@@ -272,7 +272,7 @@ export const migratePyqImagesToObjectStorage = createServerFn({ method: "POST" }
       from pyq_questions
       where question_image_url like 'data:image/jpeg;base64,%'
       order by created_at, id
-      limit 20
+      limit 1
     `;
     let moved = 0;
     for (const row of rows) {
@@ -286,11 +286,12 @@ export const migratePyqImagesToObjectStorage = createServerFn({ method: "POST" }
         [row.id, imageUrl, row.question_image_url],
       );
       moved += result.length;
+      // Reclaim the replaced inline image before attempting another one. This
+      // keeps each request's temporary database growth below the project cap.
+      if (result.length) {
+        await sql.query("VACUUM (ANALYZE) pyq_questions");
+      }
     }
-    // Each update replaces a large toasted base64 value with a short URL.
-    // Reclaim dead tuples before the next migration batch so the project's
-    // storage cap does not fill up with obsolete inline image versions.
-    await sql.query("VACUUM (ANALYZE) pyq_questions");
     const remaining = await sql<{ n: number }>`
       select count(*)::int as n from pyq_questions
       where question_image_url like 'data:image/jpeg;base64,%'
