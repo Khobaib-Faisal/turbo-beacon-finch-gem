@@ -29,7 +29,12 @@ import {
   setWeakCleared,
   undoLastLecture,
 } from "@/lib/jee/api";
-import { getPyqQuestionImage, listPyqChapters } from "@/lib/pyq/api";
+import {
+  getPyqQuestionImage,
+  listPyqChapters,
+  listSolvedPyqQuestionIds,
+  saveSolvedPyqQuestionIds,
+} from "@/lib/pyq/api";
 import { TestGenerator } from "@/components/test-generator";
 import { mergeVaultChapters } from "@/lib/pyq/merge-chapters";
 import { daysBetween, formatHours, formatLong } from "@/lib/jee/pace";
@@ -229,6 +234,62 @@ export function DeskApp() {
   }
 
   useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remoteIds = await listSolvedPyqQuestionIds();
+        let localIds: string[] = [];
+        try {
+          const parsed = JSON.parse(localStorage.getItem("jee_solved_pyq_ids") || "[]");
+          if (Array.isArray(parsed)) {
+            localIds = parsed.filter((id): id is string => typeof id === "string" && id.length <= 200);
+          }
+        } catch {
+          localIds = [];
+        }
+        if (localIds.length) {
+          await saveSolvedPyqQuestionIds({ data: { ids: localIds } });
+        }
+        if (cancelled) return;
+        setSolvedIds((current) => [...new Set([...current, ...remoteIds, ...localIds])]);
+      } catch (error) {
+        if (!cancelled) {
+          setError(`Could not sync solved questions to your account. This device still has its saved progress. ${messageOf(error)}`);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("jee_solved_pyq_ids", JSON.stringify(solvedIds));
+  }, [solvedIds]);
+
+  useEffect(() => {
+    if (activeTab !== "pyq" || pyqView !== "dashboard" || !user?.id) return;
+    let cancelled = false;
+    const refreshSolved = () => {
+      void listSolvedPyqQuestionIds()
+        .then((ids) => {
+          if (!cancelled) setSolvedIds((current) => [...new Set([...current, ...ids])]);
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setError(`Could not refresh account progress: ${messageOf(error)}`);
+        });
+    };
+    refreshSolved();
+    window.addEventListener("focus", refreshSolved);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refreshSolved);
+    };
+  }, [activeTab, pyqView, user?.id]);
+
+  useEffect(() => {
     let cancelled = false;
     setLoadingQuestions(true);
     const staticPromise = fetch(`/data/${selectedSubject}.json`)
@@ -360,6 +421,9 @@ export function DeskApp() {
     if (typeof window !== "undefined") {
       localStorage.setItem("jee_solved_pyq_ids", JSON.stringify(nextSolved));
     }
+    void saveSolvedPyqQuestionIds({ data: { ids: [q.id] } }).catch((error: unknown) => {
+      setError(`Progress is saved on this device, but did not sync to your account: ${messageOf(error)}`);
+    });
 
     if (desk) {
       const earnedXP = 4;
