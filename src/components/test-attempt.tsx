@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Check, CheckCircle2, Clock3, Eye, Flag, X, XCircle } from "lucide-react";
-import { completeTestAttempt, getTestAttempt, type AttemptAnalysis, type AttemptAnswer, type AttemptQuestion, type TestAttempt } from "@/lib/jee/test-attempts";
+import { completeTestAttempt, generateTestInsights, getTestAttempt, type AiTestInsights, type AttemptAnalysis, type AttemptAnswer, type AttemptQuestion, type TestAttempt } from "@/lib/jee/test-attempts";
 import { getPyqQuestionImage } from "@/lib/pyq/api";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { SignInPanel, ShellSkeleton } from "@/components/sign-in-panel";
@@ -54,9 +54,13 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [analysis, setAnalysis] = useState<AttemptAnalysis | null>(null);
+  const [aiInsights, setAiInsights] = useState<AiTestInsights | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const submittedRef = useRef(false);
+  const aiRequestedFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -71,6 +75,7 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
       setAttempt(result);
       setAnswers(result.answers ?? {});
       setAnalysis(result.analysis);
+      setAiInsights(result.analysis?.aiInsights ?? null);
       setSecondsLeft(result.analysis ? 0 : result.durationSeconds);
       submittedRef.current = Boolean(result.submittedAt);
     }).catch((error: unknown) => {
@@ -78,6 +83,37 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [attemptId, user]);
+
+  useEffect(() => {
+    if (!attempt?.submittedAt || !analysis || analysis.aiInsights || aiRequestedFor.current === attempt.id) return;
+    aiRequestedFor.current = attempt.id;
+    setAiLoading(true);
+    setAiError(null);
+    generateTestInsights({ data: { id: attempt.id } }).then((result) => {
+      setAiInsights(result);
+      setAnalysis((current) => current ? { ...current, aiInsights: result } : current);
+    }).catch((error: unknown) => {
+      aiRequestedFor.current = null;
+      setAiError(error instanceof Error ? error.message : "Could not generate AI insights.");
+    }).finally(() => setAiLoading(false));
+  }, [attempt?.id, attempt?.submittedAt, analysis]);
+
+  async function retryAiAnalysis() {
+    if (!attempt) return;
+    aiRequestedFor.current = attempt.id;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await generateTestInsights({ data: { id: attempt.id } });
+      setAiInsights(result);
+      setAnalysis((current) => current ? { ...current, aiInsights: result } : current);
+    } catch (error) {
+      aiRequestedFor.current = null;
+      setAiError(error instanceof Error ? error.message : "Could not generate AI insights.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   const questions = attempt?.questions ?? [];
   const active = questions[currentIndex] ?? null;
@@ -108,6 +144,7 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
         },
       });
       setAnalysis(result);
+      setAiInsights(null);
       setAttempt((current) => current ? { ...current, answers, analysis: result, submittedAt: new Date().toISOString() } : current);
     } catch (error) {
       submittedRef.current = false;
@@ -179,6 +216,32 @@ export function TestAttemptPage({ attemptId }: { attemptId: string }) {
             <div className="flex justify-between gap-2 text-xs"><span className="font-semibold text-fg">Paper score</span><span className="text-muted">{percent}%</span></div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-raised"><div className="h-full rounded-full bg-accent" style={{ width: Math.max(0, Math.min(100, percent)) + "%" }} /></div>
           </div>
+        </section>
+
+        <section className={outer} aria-live="polite">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><h2 className="font-semibold text-fg">AI performance insights</h2><p className="mt-1 text-xs text-muted">Chapter strengths and likely mistake patterns based on your answers and time spent.</p></div>
+            {aiError ? <button type="button" onClick={() => void retryAiAnalysis()} disabled={aiLoading} className="min-h-10 rounded-lg border border-line bg-raised px-3 text-xs font-medium text-fg disabled:opacity-50">Try again</button> : null}
+          </div>
+          {aiLoading ? <p className="mt-4 animate-pulse text-sm text-muted">AI is reviewing your answers, chapters, and time spent…</p> : null}
+          {aiError ? <p role="alert" className="mt-3 text-sm text-amber-300">{aiError}</p> : null}
+          {aiInsights ? <>
+            <p className="mt-4 text-sm leading-relaxed text-fg">{aiInsights.summary}</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {([
+                ["Needs attention", aiInsights.needsAttention, "text-red-300"],
+                ["Conceptual gaps", aiInsights.conceptualGaps, "text-amber-300"],
+                ["Possible careless mistakes", aiInsights.carelessMistakes, "text-amber-200"],
+                ["Moderate chapters", aiInsights.moderateChapters, "text-fg"],
+                ["Strong chapters", aiInsights.strongChapters, "text-emerald-300"],
+                ["Next steps", aiInsights.nextSteps, "text-fg"],
+              ] as Array<[string, string[], string]>).map(([title, items, color]) => <div key={title} className="rounded-xl border border-line bg-bg p-3">
+                <h3 className={`text-sm font-semibold ${color}`}>{title}</h3>
+                {items.length ? <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-relaxed text-muted">{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p className="mt-2 text-xs text-muted">No clear findings from this test.</p>}
+              </div>)}
+            </div>
+            <p className="mt-3 text-[11px] text-muted">Careless mistakes are only possible indicators; one test cannot reliably determine why an answer was missed.</p>
+          </> : null}
         </section>
 
         <section className={outer}>

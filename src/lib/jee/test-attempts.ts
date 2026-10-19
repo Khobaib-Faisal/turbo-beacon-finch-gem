@@ -1,7 +1,18 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { env } from "@/lib/env.server";
 import type { SubjectId } from "@/lib/jee/types";
+
+export type AiTestInsights = {
+  summary: string;
+  conceptualGaps: string[];
+  carelessMistakes: string[];
+  strongChapters: string[];
+  moderateChapters: string[];
+  needsAttention: string[];
+  nextSteps: string[];
+};
 
 export type AttemptQuestion = {
   id: string;
@@ -47,6 +58,7 @@ export type AttemptAnalysis = {
     score: number;
     seconds: number;
   }>;
+  aiInsights?: AiTestInsights;
 };
 
 export type TestAttempt = {
@@ -295,4 +307,90 @@ export const completeTestAttempt = createServerFn({ method: "POST" })
       [data.id, context.userId, JSON.stringify(answers), JSON.stringify(analysis), analysis.elapsedSeconds],
     );
     return analysis;
+  });
+
+export const generateTestInsights = createServerFn({ method: "POST" })
+  .validator((input: { id: string }) => {
+    if (!input || typeof input.id !== "string" || input.id.length > 100) throw new Error("Invalid test id.");
+    return { id: input.id };
+  })
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }): Promise<AiTestInsights> => {
+    const sql = await getSql();
+    const rows = await sql.query<{
+      analysis_snapshot: AttemptAnalysis | null;
+      question_snapshot: AttemptQuestion[];
+      submitted_at: string | null;
+    }>(
+      `select analysis_snapshot, question_snapshot, submitted_at::text
+       from jee_test_attempts where id = $1 and user_id = $2 limit 1`,
+      [data.id, context.userId],
+    );
+    const attempt = rows[0];
+    if (!attempt?.analysis_snapshot || !attempt.submitted_at) throw new Error("Submit the test before generating its AI analysis.");
+    if (attempt.analysis_snapshot.aiInsights) return attempt.analysis_snapshot.aiInsights;
+
+    const apiKey = env("GEMINI_API_KEY") ?? env("VITE_API_KEY") ?? env("VITE_GEMINI_API_KEY");
+    if (!apiKey) throw new Error("AI analysis is not configured yet. Add GEMINI_API_KEY or VITE_API_KEY to the Vercel environment.");
+
+    const analysis = attempt.analysis_snapshot;
+    const chapterStats = new Map<string, { total: number; correct: number; wrong: number; unanswered: number; seconds: number }>();
+    for (const question of analysis.questions) {
+      const key = `${question.subject} / ${question.chapter}`;
+      const current = chapterStats.get(key) ?? { total: 0, correct: 0, wrong: 0, unanswered: 0, seconds: 0 };
+      current.total += 1;
+      current.seconds += question.secondsSpent;
+      if (question.isCorrect === true) current.correct += 1;
+      else if (question.isCorrect === false) current.wrong += 1;
+      else current.unanswered += 1;
+      chapterStats.set(key, current);
+    }
+    const questionReview = analysis.questions.map((question, index) => ({
+      number: index + 1,
+      subject: question.subject,
+      chapter: question.chapter,
+      result: question.isCorrect === null ? "unanswered" : question.isCorrect ? "correct" : "wrong",
+      seconds: question.secondsSpent,
+      question: question.question.slice(0, 700),
+      selected: question.type === "mcq"
+        ? question.answer.choice === null ? "unanswered" : `option ${String.fromCharCode(65 + question.answer.choice)}`
+        : question.answer.numeric || "unanswered",
+      correctAnswer: question.type === "mcq" ? `option ${String.fromCharCode(65 + question.correctAnswer)}` : String(question.correctAnswer),
+      explanation: question.explanation.slice(0, 350),
+    }));
+    const prompt = `You are a careful JEE Main performance coach. Analyze only the supplied test evidence. Do not claim certainty about a student's mental state: label careless mistakes as possible signs (for example, a fast wrong answer or a correct concept with a likely execution slip) and say when evidence is insufficient. Chapter labels: strong means at least 75% correct with at least 2 questions; moderate means 45%-74% with at least 2 questions; needs attention means below 45% with at least 2 questions. If fewer than 2 questions exist, say more practice is needed to assess. Conceptual gaps should cite the question/chapter evidence and distinguish them from speed/accuracy issues. Return ONLY valid JSON with string fields/arrays: {"summary":"...","conceptualGaps":["..."],"carelessMistakes":["..."],"strongChapters":["..."],"moderateChapters":["..."],"needsAttention":["..."],"nextSteps":["..."]}. Keep advice specific and actionable.\n\nTest totals: score ${analysis.score}/${analysis.maxScore}; ${analysis.correct} correct, ${analysis.incorrect} wrong, ${analysis.unanswered} unanswered; duration ${analysis.elapsedSeconds} seconds.\nChapter counts: ${JSON.stringify([...chapterStats.entries()].map(([chapter, stats]) => ({ chapter, ...stats })))}\nQuestion evidence: ${JSON.stringify(questionReview)}`;
+
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(apiKey), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+    const payload = await response.json() as {
+      error?: { message?: string };
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    if (!response.ok) throw new Error(payload.error?.message || "Gemini could not analyze this test right now.");
+    const raw = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
+    if (!raw) throw new Error("The AI returned an empty analysis. Please try again.");
+    let parsed: Partial<AiTestInsights>;
+    try { parsed = JSON.parse(raw) as Partial<AiTestInsights>; }
+    catch { throw new Error("The AI returned an unreadable analysis. Please try again."); }
+    const insights: AiTestInsights = {
+      summary: typeof parsed.summary === "string" ? parsed.summary.slice(0, 1200) : "Analysis generated.",
+      conceptualGaps: Array.isArray(parsed.conceptualGaps) ? parsed.conceptualGaps.filter((x): x is string => typeof x === "string").slice(0, 8) : [],
+      carelessMistakes: Array.isArray(parsed.carelessMistakes) ? parsed.carelessMistakes.filter((x): x is string => typeof x === "string").slice(0, 8) : [],
+      strongChapters: Array.isArray(parsed.strongChapters) ? parsed.strongChapters.filter((x): x is string => typeof x === "string").slice(0, 12) : [],
+      moderateChapters: Array.isArray(parsed.moderateChapters) ? parsed.moderateChapters.filter((x): x is string => typeof x === "string").slice(0, 12) : [],
+      needsAttention: Array.isArray(parsed.needsAttention) ? parsed.needsAttention.filter((x): x is string => typeof x === "string").slice(0, 12) : [],
+      nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps.filter((x): x is string => typeof x === "string").slice(0, 8) : [],
+    };
+    const updated = { ...analysis, aiInsights: insights };
+    await sql.query(
+      `update jee_test_attempts set analysis_snapshot = $3::jsonb where id = $1 and user_id = $2`,
+      [data.id, context.userId, JSON.stringify(updated)],
+    );
+    return insights;
   });
