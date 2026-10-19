@@ -10,6 +10,7 @@ import {
   listPyqDbChapters,
   deletePyqChapter,
   deletePyqJunk,
+  movePyqChapter,
 } from "@/lib/pyq/api";
 import type { ExtractedQuestion, ExtractResult, ImportQuestionInput } from "@/lib/pyq/types";
 import type { SubjectId } from "@/lib/jee/types";
@@ -18,7 +19,7 @@ export const Route = createFileRoute("/admin/pyq-import")({
   component: PyqImportPage,
 });
 
-type ReviewRow = ExtractedQuestion & { keep: boolean };
+type ReviewRow = ExtractedQuestion & { keep: boolean; chapter: string; detectedChapter: string; sourcePdf: string };
 
 type PdfQuestionCrop = { pageNumber: number; questionNumber: number; imageUrl: string };
 
@@ -148,6 +149,8 @@ function PyqImportPage() {
   const [fileName, setFileName] = useState("");
   const [subject, setSubject] = useState<SubjectId>("maths");
   const [defaultYear, setDefaultYear] = useState<number | "">("");
+  const [chapterGroup, setChapterGroup] = useState("");
+  const [chapterTargets, setChapterTargets] = useState<Record<string, string>>({});
   const [upsert, setUpsert] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,53 +219,71 @@ function PyqImportPage() {
     );
   }
 
-  async function onFile(file: File | null) {
-    if (!file) return;
+  async function onFiles(files: File[]) {
+    if (!files.length) return;
     setError(null);
     setImportMsg(null);
     setResult(null);
     setRows([]);
-    setFileName(file.name);
-    const detectedYear = file.name.match(/\b(20(?:1[3-9]|2[0-6]))\b/);
-    setDefaultYear(detectedYear ? Number(detectedYear[1]) : "");
+    setChapterGroup("");
+    setFileName(files.length === 1 ? files[0].name : `${files.length} PDFs selected`);
+    setDefaultYear(files.length === 1 ? Number(files[0].name.match(/\b(20(?:1[3-9]|2[0-6]))\b/)?.[1] ?? "") || "" : "");
     setBusy(true);
     try {
-      const { text, questionCrops } = await extractTextFromPdf(file);
-      const extracted = await extractPyqFromText({
-        data: { text, fileName: file.name, subject },
-      });
-      const cropByQuestion = new Map(
-        questionCrops.map((crop) => [`${crop.pageNumber}:${crop.questionNumber}`, crop.imageUrl]),
-      );
-      const questions = extracted.questions.map((question) => ({
-        ...question,
-        questionImageUrl:
-          question.pageNumber == null || question.questionNumber == null
+      const allRows: ReviewRow[] = [];
+      const extractedResults: Array<{ fileName: string; result: ExtractResult }> = [];
+      const fileErrors: string[] = [];
+      for (const [fileIndex, file] of files.entries()) {
+        setImportMsg(`Reading PDF ${fileIndex + 1} of ${files.length}: ${file.name}`);
+        try {
+        const { text, questionCrops } = await extractTextFromPdf(file);
+        const extracted = await extractPyqFromText({ data: { text, fileName: file.name, subject } });
+        extractedResults.push({ fileName: file.name, result: extracted });
+        const cropByQuestion = new Map(
+          questionCrops.map((crop) => [`${crop.pageNumber}:${crop.questionNumber}`, crop.imageUrl]),
+        );
+        const fileYear = Number(file.name.match(/\b(20(?:1[3-9]|2[0-6]))\b/)?.[1] ?? "") || null;
+        allRows.push(...extracted.questions.map((question) => {
+          const questionImageUrl = question.pageNumber == null || question.questionNumber == null
             ? null
-            : cropByQuestion.get(`${question.pageNumber}:${question.questionNumber}`) ?? null,
-      }));
+            : cropByQuestion.get(`${question.pageNumber}:${question.questionNumber}`) ?? null;
+          return {
+            ...question,
+            year: question.year ?? (files.length === 1 ? fileYear : null),
+            chapter: extracted.chapter,
+            detectedChapter: extracted.chapter,
+            sourcePdf: file.name,
+            questionImageUrl,
+            keep: Boolean(questionImageUrl) || (Boolean(question.questionText.trim())
+              && !question.flags.includes("extraction_failed") && !question.flags.includes("low_text_quality")),
+          };
+        }));
+        } catch (fileError) {
+          fileErrors.push(`${file.name}: ${fileError instanceof Error ? fileError.message : "Could not read PDF."}`);
+        }
+      }
+      const first = extractedResults[0]?.result;
+      if (!first) throw new Error(fileErrors.join(" ") || "No PDFs were processed.");
+      const questions = allRows;
       const visualCount = questions.filter((question) => question.questionImageUrl).length;
+      const warnings = [
+        ...fileErrors,
+        ...extractedResults.map(({ fileName: name, result: item }) => `${name}: ${item.warnings.join(" ")}`)
+          .filter((warning) => !warning.endsWith(": ")),
+      ];
       setResult({
-        ...extracted,
+        ...first,
+        chapter: files.length === 1 ? first.chapter : `${extractedResults.length} PDF chapters`,
+        sourcePdf: extractedResults.map(({ fileName: name }) => name).join(", "),
         questions,
         warnings: [
-          ...extracted.warnings,
+          ...warnings,
           visualCount < questions.length
             ? `${visualCount} of ${questions.length} questions have a visual PDF capture. Review or skip questions without one.`
             : `All ${visualCount} questions have a visual PDF capture; equations and diagrams are preserved.`,
         ],
       });
-      setRows(
-        questions.map((q) => ({
-          ...q,
-          year: q.year ?? (detectedYear ? Number(detectedYear[1]) : null),
-          keep:
-            Boolean(q.questionImageUrl) ||
-            (Boolean(q.questionText.trim()) &&
-              !q.flags.includes("extraction_failed") &&
-              !q.flags.includes("low_text_quality")),
-        })),
-      );
+      setRows(questions);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Extraction failed.");
     } finally {
@@ -287,7 +308,7 @@ function PyqImportPage() {
         const payload: ImportQuestionInput[] = selected.slice(start, start + batchSize).map((q) => ({
           externalKey: q.externalKey,
           subject: result.subject,
-          chapter: result.chapter,
+          chapter: q.chapter,
           topic: q.topic,
           source: q.source,
           year: q.year,
@@ -298,7 +319,7 @@ function PyqImportPage() {
           correctAnswer: q.correctAnswer,
           pageNumber: q.pageNumber,
           needsReview: q.needsReview || q.flags.length > 0 || !q.questionText.trim(),
-          sourcePdf: result.sourcePdf,
+          sourcePdf: q.sourcePdf,
           questionImageUrl: q.questionImageUrl,
         }));
         const res = await importPyqQuestions({
@@ -425,6 +446,47 @@ function PyqImportPage() {
                 >
                   Delete chapter
                 </button>
+                <details className="basis-full border-t border-line pt-2">
+                  <summary className="cursor-pointer text-xs font-medium text-accent">Rename or merge into another chapter</summary>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <input
+                      value={chapterTargets[`${ch.subject}|${ch.chapter}`] ?? ""}
+                      onChange={(event) => setChapterTargets((current) => ({
+                        ...current,
+                        [`${ch.subject}|${ch.chapter}`]: event.target.value,
+                      }))}
+                      placeholder="Destination chapter name"
+                      aria-label={`Destination chapter for ${ch.chapter}`}
+                      className="min-h-10 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-xs text-fg"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy || !chapterTargets[`${ch.subject}|${ch.chapter}`]?.trim()}
+                      className="min-h-10 rounded-lg border border-line px-3 text-xs font-semibold text-fg disabled:opacity-40"
+                      onClick={() => {
+                        void (async () => {
+                          setBusy(true);
+                          setError(null);
+                          try {
+                            const res = await movePyqChapter({ data: {
+                              subject: ch.subject as SubjectId,
+                              chapter: ch.chapter,
+                              targetChapter: chapterTargets[`${ch.subject}|${ch.chapter}`],
+                            } });
+                            setImportMsg(`Moved ${res.moved} questions from ${res.from} into ${res.to}.`);
+                            await refreshAdminMeta();
+                          } catch (e) {
+                            setError(e instanceof Error ? e.message : "Could not merge chapter.");
+                          } finally {
+                            setBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      Move / merge
+                    </button>
+                  </div>
+                </details>
               </li>
             ))}
           </ul>
@@ -434,9 +496,9 @@ function PyqImportPage() {
       </section>
 
       <section className="mt-6 space-y-4 rounded-2xl border border-line bg-surface p-4 sm:p-6">
-        <h2 className="text-lg font-semibold text-fg">2. Import chapter PDF</h2>
+        <h2 className="text-lg font-semibold text-fg">2. Import chapter PDFs</h2>
         <p className="text-sm text-muted">
-          Each question is also saved as a visual crop from the PDF, preserving equations and diagrams in the vault.
+          Select several PDFs for one subject at once. Review every question before importing; equations and diagrams are preserved as visual captures.
         </p>
         <label className="block text-sm font-medium text-fg">
           Subject
@@ -451,7 +513,7 @@ function PyqImportPage() {
             <option value="chemistry">Chemistry</option>
           </select>
         </label>
-        <label className="block text-sm font-medium text-fg">Year for this PDF
+        <label className="block text-sm font-medium text-fg">Year override for selected PDFs
           <input type="number" min="2000" max="2035" placeholder="e.g. 2024" value={defaultYear}
             onChange={(e) => {
               const value = e.target.value ? Number(e.target.value) : "";
@@ -459,7 +521,7 @@ function PyqImportPage() {
               setRows((current) => current.map((row) => ({ ...row, year: value === "" ? null : value })));
             }}
             className="mt-1 w-full min-h-11 rounded-xl border border-line bg-bg px-3 text-base text-fg" />
-          <span className="mt-1 block text-xs text-muted">Applied to every question in this PDF. You can still correct an individual question below.</span>
+          <span className="mt-1 block text-xs text-muted">Leave blank to detect each PDF’s year. Setting a year applies it to all selected questions; you can correct individual questions below.</span>
         </label>
         <label className="flex items-center gap-2 text-sm text-fg">
           <input
@@ -471,16 +533,17 @@ function PyqImportPage() {
           Upsert on re-import (update by chapter + Q number)
         </label>
         <label className="block text-sm font-medium text-fg">
-          Chapter PDF (PrepWiser)
+          Chapter PDFs (PrepWiser)
           <input
             type="file"
             accept="application/pdf,.pdf"
             className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-semibold file:text-accent-ink"
             disabled={busy}
-            onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
+            multiple
+            onChange={(e) => void onFiles(Array.from(e.target.files ?? []))}
           />
         </label>
-        {fileName ? <p className="text-xs text-muted">File: {fileName}</p> : null}
+        {fileName ? <p className="text-xs text-muted">Selected: {fileName}</p> : null}
         {busy ? <p className="text-sm text-accent">Working…</p> : null}
         {error ? <p className="text-sm text-accent">{error}</p> : null}
         {importMsg ? <p className="text-sm font-medium text-fg">{importMsg}</p> : null}
@@ -488,6 +551,21 @@ function PyqImportPage() {
 
       {result ? (
         <section className="mt-6 space-y-3">
+          <label className="block rounded-xl border border-line bg-surface p-3 text-sm font-medium text-fg">
+            Combine these PDFs under one chapter (optional)
+            <input value={chapterGroup} onChange={(event) => {
+              const value = event.target.value;
+              setChapterGroup(value);
+              setRows((current) => current.map((row) => ({ ...row, chapter: value.trim() || row.detectedChapter })));
+              setResult((current) => {
+                if (!current) return current;
+                const detected = [...new Set(rows.map((row) => row.detectedChapter))];
+                return { ...current, chapter: value.trim() || (detected.length === 1 ? detected[0] : `${detected.length} PDF chapters`) };
+              });
+            }} placeholder="e.g. Centre of Mass and Collision or Thermodynamics"
+              className="mt-1 min-h-11 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg" />
+            <span className="mt-1 block text-xs font-normal text-muted">Leave blank to keep each PDF’s detected chapter. Set a shared title to collect related subtopics into one chapter.</span>
+          </label>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-fg">{result.chapter}</h2>
@@ -553,7 +631,7 @@ function PyqImportPage() {
                 !row.questionText.trim();
               return (
                 <article
-                  key={row.externalKey}
+                  key={`${row.sourcePdf}|${row.externalKey}|${idx}`}
                   className={`rounded-2xl border p-4 ${
                     row.keep ? "border-line bg-surface" : "border-line/50 bg-bg opacity-60"
                   } ${failed ? "ring-1 ring-accent/40" : ""}`}
@@ -570,6 +648,7 @@ function PyqImportPage() {
                         Q{row.questionNumber ?? "?"} · {row.type}
                       </span>
                       <span className="text-xs text-muted">{row.source}</span>
+                      <span className="text-xs text-muted">{row.chapter} · {row.sourcePdf}</span>
                       <label className="text-xs text-muted">Year
                         <input type="number" min="2000" max="2035" placeholder="Year"
                           className="ml-2 w-20 rounded-lg border border-line bg-bg px-2 py-1 text-sm text-fg"
