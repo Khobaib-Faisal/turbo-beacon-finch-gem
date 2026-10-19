@@ -20,7 +20,11 @@ export const Route = createFileRoute("/admin/pyq-import")({
 
 type ReviewRow = ExtractedQuestion & { keep: boolean };
 
-async function extractTextFromPdf(file: File): Promise<string> {
+type PdfQuestionCrop = { pageNumber: number; questionNumber: number; imageUrl: string };
+
+async function extractTextFromPdf(
+  file: File,
+): Promise<{ text: string; questionCrops: PdfQuestionCrop[] }> {
   const pdfjs: any = await import(
     /* @vite-ignore */ "https://esm.sh/pdfjs-dist@4.10.38/build/pdf.mjs"
   );
@@ -29,6 +33,7 @@ async function extractTextFromPdf(file: File): Promise<string> {
   const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: buf }).promise;
   const parts: string[] = [];
+  const questionCrops: PdfQuestionCrop[] = [];
 
   for (let p = 1; p <= doc.numPages; p += 1) {
     const page = await doc.getPage(p);
@@ -64,9 +69,77 @@ async function extractTextFromPdf(file: File): Promise<string> {
       const text = line.chunks.map((c) => c.s).join(" ").replace(/ +/g, " ").trim();
       if (text) parts.push(text);
     }
+
+    const markerCandidates = lines
+      .flatMap((line) => {
+        if (!line.chunks.length) return [];
+        const text = [...line.chunks]
+          .sort((a, b) => a.x - b.x)
+          .map((c) => c.s)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const match = text.match(/\bQ\s*(\d+)\s+JEE\s+Main\b/i);
+        return match ? [{ questionNumber: Number(match[1]), pdfY: line.y }] : [];
+      })
+      .map((marker) => {
+        const view = page.getViewport({ scale: 1.6 });
+        return {
+          questionNumber: marker.questionNumber,
+          y: view.convertToViewportPoint(0, marker.pdfY)[1],
+        };
+      })
+      .sort((a, b) => a.y - b.y);
+    const seenQuestionNumbers = new Set<number>();
+    const markers = markerCandidates.filter((marker) => {
+      if (seenQuestionNumbers.has(marker.questionNumber)) return false;
+      seenQuestionNumbers.add(marker.questionNumber);
+      return true;
+    });
+
+    if (markers.length) {
+      const viewport = page.getViewport({ scale: 1.6 });
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = Math.ceil(viewport.width);
+      pageCanvas.height = Math.ceil(viewport.height);
+      const pageContext = pageCanvas.getContext("2d", { alpha: false });
+      if (pageContext) {
+        pageContext.fillStyle = "#fff";
+        pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        await page.render({ canvasContext: pageContext, viewport }).promise;
+
+        const margin = 30 * viewport.scale;
+        for (let i = 0; i < markers.length; i += 1) {
+          const marker = markers[i];
+          const next = markers[i + 1];
+          const top = Math.max(0, marker.y - 17 * viewport.scale);
+          const bottom = Math.min(
+            viewport.height,
+            next ? next.y - 11 * viewport.scale : viewport.height - 40 * viewport.scale,
+          );
+          const width = Math.max(1, Math.floor(viewport.width - margin * 2));
+          const height = Math.max(1, Math.floor(bottom - top));
+          if (height < 42 * viewport.scale) continue;
+
+          const crop = document.createElement("canvas");
+          crop.width = width;
+          crop.height = height;
+          const cropContext = crop.getContext("2d", { alpha: false });
+          if (!cropContext) continue;
+          cropContext.fillStyle = "#fff";
+          cropContext.fillRect(0, 0, width, height);
+          cropContext.drawImage(pageCanvas, margin, top, width, height, 0, 0, width, height);
+          let imageUrl = crop.toDataURL("image/jpeg", 0.9);
+          if (imageUrl.length > 300_000) imageUrl = crop.toDataURL("image/jpeg", 0.72);
+          if (imageUrl.length <= 300_000) {
+            questionCrops.push({ pageNumber: p, questionNumber: marker.questionNumber, imageUrl });
+          }
+        }
+      }
+    }
     parts.push("\f");
   }
-  return parts.join("\n");
+  return { text: parts.join("\n"), questionCrops };
 }
 
 function PyqImportPage() {
@@ -109,7 +182,7 @@ function PyqImportPage() {
 
   const keepCount = useMemo(() => rows.filter((r) => r.keep).length, [rows]);
   const failedCount = useMemo(
-    () => rows.filter((r) => r.flags.includes("extraction_failed") || !r.questionText.trim()).length,
+    () => rows.filter((r) => !r.questionImageUrl && (r.flags.includes("extraction_failed") || !r.questionText.trim())).length,
     [rows],
   );
 
@@ -151,18 +224,39 @@ function PyqImportPage() {
     setFileName(file.name);
     setBusy(true);
     try {
-      const text = await extractTextFromPdf(file);
+      const { text, questionCrops } = await extractTextFromPdf(file);
       const extracted = await extractPyqFromText({
         data: { text, fileName: file.name, subject },
       });
-      setResult(extracted);
+      const cropByQuestion = new Map(
+        questionCrops.map((crop) => [`${crop.pageNumber}:${crop.questionNumber}`, crop.imageUrl]),
+      );
+      const questions = extracted.questions.map((question) => ({
+        ...question,
+        questionImageUrl:
+          question.pageNumber == null || question.questionNumber == null
+            ? null
+            : cropByQuestion.get(`${question.pageNumber}:${question.questionNumber}`) ?? null,
+      }));
+      const visualCount = questions.filter((question) => question.questionImageUrl).length;
+      setResult({
+        ...extracted,
+        questions,
+        warnings: [
+          ...extracted.warnings,
+          visualCount < questions.length
+            ? `${visualCount} of ${questions.length} questions have a visual PDF capture. Review or skip questions without one.`
+            : `All ${visualCount} questions have a visual PDF capture; equations and diagrams are preserved.`,
+        ],
+      });
       setRows(
-        extracted.questions.map((q) => ({
+        questions.map((q) => ({
           ...q,
           keep:
-            Boolean(q.questionText.trim()) &&
-            !q.flags.includes("extraction_failed") &&
-            !q.flags.includes("low_text_quality"),
+            Boolean(q.questionImageUrl) ||
+            (Boolean(q.questionText.trim()) &&
+              !q.flags.includes("extraction_failed") &&
+              !q.flags.includes("low_text_quality")),
         })),
       );
     } catch (e) {
@@ -182,33 +276,46 @@ function PyqImportPage() {
     setBusy(true);
     setError(null);
     setImportMsg(null);
+    let completed = { inserted: 0, updated: 0, skipped: 0 };
     try {
-      const payload: ImportQuestionInput[] = selected.map((q) => ({
-        externalKey: q.externalKey,
-        subject: result.subject,
-        chapter: result.chapter,
-        topic: q.topic,
-        source: q.source,
-        questionNumber: q.questionNumber,
-        type: q.type,
-        questionText: q.questionText,
-        options: q.options,
-        correctAnswer: q.correctAnswer,
-        pageNumber: q.pageNumber,
-        needsReview: q.needsReview || q.flags.length > 0 || !q.questionText.trim(),
-        sourcePdf: result.sourcePdf,
-      }));
-      const res = await importPyqQuestions({
-        data: { questions: payload, mode: upsert ? "upsert" : "insert" },
-      });
+      const batchSize = 6;
+      for (let start = 0; start < selected.length; start += batchSize) {
+        const payload: ImportQuestionInput[] = selected.slice(start, start + batchSize).map((q) => ({
+          externalKey: q.externalKey,
+          subject: result.subject,
+          chapter: result.chapter,
+          topic: q.topic,
+          source: q.source,
+          questionNumber: q.questionNumber,
+          type: q.type,
+          questionText: q.questionText,
+          options: q.type === "mcq" ? ["A", "B", "C", "D"] : null,
+          correctAnswer: q.correctAnswer,
+          pageNumber: q.pageNumber,
+          needsReview: q.needsReview || q.flags.length > 0 || !q.questionText.trim(),
+          sourcePdf: result.sourcePdf,
+          questionImageUrl: q.questionImageUrl,
+        }));
+        const res = await importPyqQuestions({
+          data: { questions: payload, mode: upsert ? "upsert" : "insert" },
+        });
+        completed = {
+          inserted: completed.inserted + res.inserted,
+          updated: completed.updated + res.updated,
+          skipped: completed.skipped + res.skipped,
+        };
+        setImportMsg(`Imported batch ${Math.min(start + batchSize, selected.length)} of ${selected.length}…`);
+      }
       setImportMsg(
         upsert
-          ? `Upsert done: ${res.inserted} new, ${res.updated} updated, ${res.skipped} skipped.`
-          : `Imported ${res.inserted} new; skipped ${res.skipped} existing (insert-only).`,
+          ? `Upsert done: ${completed.inserted} new, ${completed.updated} updated, ${completed.skipped} skipped.`
+          : `Imported ${completed.inserted} new; skipped ${completed.skipped} existing (insert-only).`,
       );
       await refreshAdminMeta();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed.");
+      setError(
+        `${e instanceof Error ? e.message : "Import failed."} ${completed.inserted + completed.updated + completed.skipped} question(s) were already processed; Upsert is safe to retry.`,
+      );
     } finally {
       setBusy(false);
     }
@@ -323,6 +430,9 @@ function PyqImportPage() {
 
       <section className="mt-6 space-y-4 rounded-2xl border border-line bg-surface p-4 sm:p-6">
         <h2 className="text-lg font-semibold text-fg">2. Import chapter PDF</h2>
+        <p className="text-sm text-muted">
+          Each question is also saved as a visual crop from the PDF, preserving equations and diagrams in the vault.
+        </p>
         <label className="block text-sm font-medium text-fg">
           Subject
           <select
@@ -368,7 +478,7 @@ function PyqImportPage() {
               <h2 className="text-lg font-semibold text-fg">{result.chapter}</h2>
               <p className="text-xs text-muted">
                 {result.questions.length} extracted · {keepCount} selected · {failedCount} empty/failed
-                · subject {result.subject}
+                · {result.questions.filter((q) => q.questionImageUrl).length} visual captures · subject {result.subject}
               </p>
               {result.warnings.length ? (
                 <ul className="mt-1 list-disc pl-5 text-xs text-accent">
@@ -387,8 +497,8 @@ function PyqImportPage() {
                     prev.map((r) => ({
                       ...r,
                       keep:
-                        Boolean(r.questionText.trim()) &&
-                        !r.flags.includes("low_text_quality"),
+                        Boolean(r.questionImageUrl) ||
+                        (Boolean(r.questionText.trim()) && !r.flags.includes("low_text_quality")),
                     })),
                   )
                 }
@@ -469,16 +579,34 @@ function PyqImportPage() {
                       />
                     </label>
                   </div>
-                  <textarea
-                    className="mt-2 w-full min-h-[72px] rounded-xl border border-line bg-bg px-3 py-2 text-sm text-fg"
-                    value={row.questionText}
-                    placeholder={
-                      failed
-                        ? `Unreadable — paste from PDF page ${row.pageNumber ?? "?"} or skip`
-                        : undefined
-                    }
-                    onChange={(e) => updateRow(idx, { questionText: e.target.value })}
-                  />
+                  {row.questionImageUrl ? (
+                    <div className="mt-3 rounded-xl border border-line bg-white p-2">
+                      <img
+                        src={row.questionImageUrl}
+                        alt={`Original visual capture of question ${row.questionNumber ?? "?"}`}
+                        className="mx-auto max-h-[28rem] w-full object-contain"
+                      />
+                      <details className="mt-2 text-xs text-muted">
+                        <summary className="cursor-pointer">Edit searchable text</summary>
+                        <textarea
+                          className="mt-2 w-full min-h-[72px] rounded-xl border border-line bg-bg px-3 py-2 text-sm text-fg"
+                          value={row.questionText}
+                          onChange={(e) => updateRow(idx, { questionText: e.target.value })}
+                        />
+                      </details>
+                    </div>
+                  ) : (
+                    <textarea
+                      className="mt-2 w-full min-h-[72px] rounded-xl border border-line bg-bg px-3 py-2 text-sm text-fg"
+                      value={row.questionText}
+                      placeholder={
+                        failed
+                          ? `Unreadable — paste from PDF page ${row.pageNumber ?? "?"} or skip`
+                          : undefined
+                      }
+                      onChange={(e) => updateRow(idx, { questionText: e.target.value })}
+                    />
+                  )}
                   {row.options ? (
                     <div className="mt-2 grid gap-1 sm:grid-cols-2">
                       {row.options.map((opt, oi) => (
