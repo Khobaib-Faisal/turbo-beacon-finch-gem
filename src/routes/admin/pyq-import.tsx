@@ -17,6 +17,7 @@ export const Route = createFileRoute("/admin/pyq-import")({
 
 type ReviewRow = ExtractedQuestion & { keep: boolean };
 
+/** Reconstruct lines from PDF.js item Y positions (avoids wiping stems). */
 async function extractTextFromPdf(file: File): Promise<string> {
   const pdfjs: any = await import(
     /* @vite-ignore */ "https://esm.sh/pdfjs-dist@4.10.38/build/pdf.mjs"
@@ -26,13 +27,41 @@ async function extractTextFromPdf(file: File): Promise<string> {
   const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: buf }).promise;
   const parts: string[] = [];
+
   for (let p = 1; p <= doc.numPages; p += 1) {
     const page = await doc.getPage(p);
     const content = await page.getTextContent();
-    const line = content.items
-      .map((it: { str?: string }) => (typeof it.str === "string" ? it.str : ""))
-      .join(" ");
-    parts.push(line);
+    const items = content.items as Array<{
+      str?: string;
+      transform?: number[];
+      hasEOL?: boolean;
+    }>;
+
+    type Line = { y: number; chunks: Array<{ x: number; s: string }> };
+    const lines: Line[] = [];
+    for (const it of items) {
+      if (typeof it.str !== "string" || !it.str) continue;
+      const tr = it.transform || [1, 0, 0, 1, 0, 0];
+      const x = tr[4] ?? 0;
+      const y = Math.round((tr[5] ?? 0) * 2) / 2;
+      const last = lines[lines.length - 1];
+      if (last && Math.abs(last.y - y) < 2.5) {
+        last.chunks.push({ x, s: it.str });
+      } else {
+        lines.push({ y, chunks: [{ x, s: it.str }] });
+      }
+      if (it.hasEOL) {
+        lines.push({ y: y - 0.01, chunks: [] });
+      }
+    }
+
+    lines.sort((a, b) => b.y - a.y);
+    for (const line of lines) {
+      if (!line.chunks.length) continue;
+      line.chunks.sort((a, b) => a.x - b.x);
+      const text = line.chunks.map((c) => c.s).join(" ").replace(/ +/g, " ").trim();
+      if (text) parts.push(text);
+    }
     parts.push("\f");
   }
   return parts.join("\n");
@@ -43,6 +72,7 @@ function PyqImportPage() {
   const [adminOk, setAdminOk] = useState<boolean | null>(null);
   const [fileName, setFileName] = useState("");
   const [subject, setSubject] = useState<SubjectId>("maths");
+  const [upsert, setUpsert] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExtractResult | null>(null);
@@ -51,6 +81,7 @@ function PyqImportPage() {
   const [stats, setStats] = useState<{
     total: number;
     bySubject: Record<string, number>;
+    needsRepair?: number;
   } | null>(null);
 
   useEffect(() => {
@@ -64,6 +95,10 @@ function PyqImportPage() {
   }, [user?.id]);
 
   const keepCount = useMemo(() => rows.filter((r) => r.keep).length, [rows]);
+  const failedCount = useMemo(
+    () => rows.filter((r) => r.flags.includes("extraction_failed") || !r.questionText.trim()).length,
+    [rows],
+  );
 
   if (isPending) {
     return (
@@ -78,8 +113,7 @@ function PyqImportPage() {
       <main className="mx-auto max-w-lg px-4 py-16 text-center">
         <h1 className="font-serif text-2xl text-fg">Admin only</h1>
         <p className="mt-2 text-sm text-muted">
-          PYQ import is restricted to emails listed in the server ADMIN_EMAILS environment
-          variable.
+          PYQ import is restricted to emails listed in the server ADMIN_EMAILS environment variable.
         </p>
         <Link to="/" className="mt-6 inline-block text-sm text-accent underline">
           Back to desk
@@ -109,7 +143,12 @@ function PyqImportPage() {
         data: { text, fileName: file.name, subject },
       });
       setResult(extracted);
-      setRows(extracted.questions.map((q) => ({ ...q, keep: true })));
+      setRows(
+        extracted.questions.map((q) => ({
+          ...q,
+          keep: Boolean(q.questionText.trim()) && !q.flags.includes("extraction_failed"),
+        })),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Extraction failed.");
     } finally {
@@ -140,12 +179,16 @@ function PyqImportPage() {
         options: q.options,
         correctAnswer: q.correctAnswer,
         pageNumber: q.pageNumber,
-        needsReview: q.needsReview || q.flags.length > 0,
+        needsReview: q.needsReview || q.flags.length > 0 || !q.questionText.trim(),
         sourcePdf: result.sourcePdf,
       }));
-      const res = await importPyqQuestions({ data: { questions: payload } });
+      const res = await importPyqQuestions({
+        data: { questions: payload, mode: upsert ? "upsert" : "insert" },
+      });
       setImportMsg(
-        `Imported ${res.inserted} new question(s); skipped ${res.skipped} duplicate(s).`,
+        upsert
+          ? `Upsert done: ${res.inserted} new, ${res.updated} updated, ${res.skipped} skipped.`
+          : `Imported ${res.inserted} new; skipped ${res.skipped} existing (insert-only).`,
       );
       const s = await getPyqImportStats();
       setStats(s);
@@ -167,7 +210,7 @@ function PyqImportPage() {
           <p className="text-xs uppercase tracking-wider text-muted">Admin</p>
           <h1 className="font-serif text-2xl font-bold text-fg">PYQ PDF Import</h1>
           <p className="mt-1 text-sm text-muted">
-            Text-first PrepWiser chapter import · answers stay unverified until you check them.
+            Re-upload with Upsert to fix placeholder stems. Answers stay unverified.
           </p>
         </div>
         <Link
@@ -184,6 +227,7 @@ function PyqImportPage() {
           {stats.bySubject.maths != null ? ` · M ${stats.bySubject.maths}` : ""}
           {stats.bySubject.physics != null ? ` · P ${stats.bySubject.physics}` : ""}
           {stats.bySubject.chemistry != null ? ` · C ${stats.bySubject.chemistry}` : ""}
+          {stats.needsRepair ? ` · ${stats.needsRepair} need text repair` : ""}
         </p>
       ) : null}
 
@@ -200,6 +244,15 @@ function PyqImportPage() {
             <option value="physics">Physics</option>
             <option value="chemistry">Chemistry</option>
           </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm text-fg">
+          <input
+            type="checkbox"
+            checked={upsert}
+            onChange={(e) => setUpsert(e.target.checked)}
+            disabled={busy}
+          />
+          Upsert on re-import (update by chapter + Q number)
         </label>
         <label className="block text-sm font-medium text-fg">
           Chapter PDF (PrepWiser)
@@ -223,7 +276,8 @@ function PyqImportPage() {
             <div>
               <h2 className="text-lg font-semibold text-fg">{result.chapter}</h2>
               <p className="text-xs text-muted">
-                {result.questions.length} extracted · subject {result.subject} · keep {keepCount}
+                {result.questions.length} extracted · {keepCount} selected · {failedCount} empty/failed
+                · subject {result.subject}
               </p>
               {result.warnings.length ? (
                 <ul className="mt-1 list-disc pl-5 text-xs text-accent">
@@ -233,7 +287,21 @@ function PyqImportPage() {
                 </ul>
               ) : null}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="min-h-10 rounded-xl border border-line bg-raised px-3 text-sm"
+                onClick={() =>
+                  setRows((prev) =>
+                    prev.map((r) => ({
+                      ...r,
+                      keep: Boolean(r.questionText.trim()),
+                    })),
+                  )
+                }
+              >
+                Keep with text
+              </button>
               <button
                 type="button"
                 className="min-h-10 rounded-xl border border-line bg-raised px-3 text-sm"
@@ -254,85 +322,98 @@ function PyqImportPage() {
                 className="min-h-10 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-ink disabled:opacity-40"
                 onClick={() => void onImport()}
               >
-                Import {keepCount}
+                {upsert ? "Upsert" : "Import"} {keepCount}
               </button>
             </div>
           </div>
 
           <div className="space-y-3">
-            {rows.map((row, idx) => (
-              <article
-                key={row.externalKey}
-                className={`rounded-2xl border p-4 ${
-                  row.keep ? "border-line bg-surface" : "border-line/50 bg-bg opacity-60"
-                }`}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={row.keep}
-                      onChange={(e) => updateRow(idx, { keep: e.target.checked })}
-                      aria-label={`Keep Q${row.questionNumber}`}
-                    />
-                    <span className="text-sm font-semibold text-fg">
-                      Q{row.questionNumber ?? "?"} · {row.type}
-                    </span>
-                    <span className="text-xs text-muted">{row.source}</span>
-                    {row.pageNumber != null ? (
-                      <span className="rounded-md bg-raised px-1.5 py-0.5 text-[10px] text-muted">
-                        p.{row.pageNumber}
-                      </span>
-                    ) : null}
-                    {row.needsReview ? (
-                      <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                        needs review
-                      </span>
-                    ) : null}
-                  </div>
-                  <label className="text-xs text-muted">
-                    Answer
-                    <input
-                      className="ml-2 w-20 rounded-lg border border-line bg-bg px-2 py-1 text-sm text-fg"
-                      value={row.correctAnswer ?? ""}
-                      onChange={(e) => updateRow(idx, { correctAnswer: e.target.value })}
-                    />
-                  </label>
-                </div>
-                <textarea
-                  className="mt-2 w-full min-h-[72px] rounded-xl border border-line bg-bg px-3 py-2 text-sm text-fg"
-                  value={row.questionText}
-                  onChange={(e) => updateRow(idx, { questionText: e.target.value })}
-                />
-                {row.options ? (
-                  <div className="mt-2 grid gap-1 sm:grid-cols-2">
-                    {row.options.map((opt, oi) => (
+            {rows.map((row, idx) => {
+              const failed =
+                row.flags.includes("extraction_failed") || !row.questionText.trim();
+              return (
+                <article
+                  key={row.externalKey}
+                  className={`rounded-2xl border p-4 ${
+                    row.keep ? "border-line bg-surface" : "border-line/50 bg-bg opacity-60"
+                  } ${failed ? "ring-1 ring-accent/40" : ""}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input
-                        key={oi}
-                        className="rounded-lg border border-line bg-bg px-2 py-1 text-xs text-fg"
-                        value={opt}
-                        onChange={(e) => {
-                          const next = [...(row.options ?? [])];
-                          next[oi] = e.target.value;
-                          updateRow(idx, { options: next });
-                        }}
-                        aria-label={`Option ${String.fromCharCode(65 + oi)}`}
+                        type="checkbox"
+                        checked={row.keep}
+                        onChange={(e) => updateRow(idx, { keep: e.target.checked })}
+                        aria-label={`Keep Q${row.questionNumber}`}
                       />
-                    ))}
+                      <span className="text-sm font-semibold text-fg">
+                        Q{row.questionNumber ?? "?"} · {row.type}
+                      </span>
+                      <span className="text-xs text-muted">{row.source}</span>
+                      {row.pageNumber != null ? (
+                        <span className="rounded-md bg-raised px-1.5 py-0.5 text-[10px] text-muted">
+                          p.{row.pageNumber}
+                        </span>
+                      ) : null}
+                      {failed ? (
+                        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                          extraction failed
+                        </span>
+                      ) : row.needsReview ? (
+                        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                          needs review
+                        </span>
+                      ) : null}
+                    </div>
+                    <label className="text-xs text-muted">
+                      Answer
+                      <input
+                        className="ml-2 w-20 rounded-lg border border-line bg-bg px-2 py-1 text-sm text-fg"
+                        value={row.correctAnswer ?? ""}
+                        onChange={(e) => updateRow(idx, { correctAnswer: e.target.value })}
+                      />
+                    </label>
                   </div>
-                ) : null}
-                {row.flags.length ? (
-                  <p className="mt-2 text-[11px] text-muted">Flags: {row.flags.join(", ")}</p>
-                ) : null}
-              </article>
-            ))}
+                  <textarea
+                    className="mt-2 w-full min-h-[72px] rounded-xl border border-line bg-bg px-3 py-2 text-sm text-fg"
+                    value={row.questionText}
+                    placeholder={
+                      failed
+                        ? `No stem extracted — paste from PDF page ${row.pageNumber ?? "?"}`
+                        : undefined
+                    }
+                    onChange={(e) => updateRow(idx, { questionText: e.target.value })}
+                  />
+                  {row.options ? (
+                    <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                      {row.options.map((opt, oi) => (
+                        <input
+                          key={oi}
+                          className="rounded-lg border border-line bg-bg px-2 py-1 text-xs text-fg"
+                          value={opt}
+                          onChange={(e) => {
+                            const next = [...(row.options ?? [])];
+                            next[oi] = e.target.value;
+                            updateRow(idx, { options: next });
+                          }}
+                          aria-label={`Option ${String.fromCharCode(65 + oi)}`}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                  {row.flags.length ? (
+                    <p className="mt-2 text-[11px] text-muted">Flags: {row.flags.join(", ")}</p>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         </section>
       ) : null}
 
       <p className="mt-10 text-xs text-muted">
-        Diagrams: each question stores its PDF page number for manual check. Automatic diagram crop
-        is not in this MVP. Re-importing the same PDF skips duplicates via external_key.
+        To fix previously imported placeholders: re-upload the same chapter PDF with Upsert on.
+        Matches subject + chapter slug + question number. Verified answers are not overwritten.
       </p>
     </main>
   );
