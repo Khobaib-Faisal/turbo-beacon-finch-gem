@@ -1,7 +1,6 @@
 /**
- * PrepWiser chapter PDF text parser (text-first MVP).
- * Input: plain text from pdf-parse / pdftotext.
- * Does not attempt OCR or diagram crops — stores page refs and flags uncertain items.
+ * PrepWiser chapter PDF text parser (text-first).
+ * Tolerates both pdftotext layout and pdf.js extracted text.
  */
 
 import type { SubjectId } from "@/lib/jee/types";
@@ -17,16 +16,22 @@ const CHAPTER_SUBJECT_HINTS: Array<{ re: RegExp; subject: SubjectId }> = [
 ];
 
 function normalizeSpace(s: string): string {
-  return s.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return s
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
-function simpleHash(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36);
+/** Stable chapter slug for external keys (re-import updates same row). */
+export function chapterSlug(chapter: string): string {
+  return chapter
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
-/** Map letter answer to 0-based index for MCQ display. */
 export function letterToIndex(letter: string): number | null {
   const c = letter.trim().toUpperCase();
   if (c === "A") return 0;
@@ -36,7 +41,6 @@ export function letterToIndex(letter: string): number | null {
   return null;
 }
 
-/** Parse numeric/letter correct answer into the number shape used by the vault UI. */
 export function correctAnswerToNumber(
   type: PyqQuestionType,
   raw: string | null,
@@ -53,10 +57,24 @@ export function correctAnswerToNumber(
 }
 
 function detectChapter(text: string, fileName: string): string {
+  const fromFile = fileName
+    .replace(/^PrepWiser_/i, "")
+    .replace(/_JEE-Main-PYQs\.pdf$/i, "")
+    .replace(/\.pdf$/i, "")
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .trim();
+
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  for (let i = 0; i < Math.min(lines.length, 30); i += 1) {
+  for (let i = 0; i < Math.min(lines.length, 40); i += 1) {
     const line = lines[i];
-    if (/chapter-wise|previous year|answer key|pyqs|papers|topics|attempt each|stuck on|practise this/i.test(line)) continue;
+    if (
+      /chapter-wise|previous year|answer key|pyqs|papers|topics|attempt each|stuck on|practise this/i.test(
+        line,
+      )
+    ) {
+      continue;
+    }
     if (/prepwiser/i.test(line)) continue;
     if (/jee\s*main/i.test(line)) continue;
     const spaces = (line.match(/ /g) || []).length;
@@ -64,14 +82,24 @@ function detectChapter(text: string, fileName: string): string {
     if (/^[·•\-|]+$/.test(line)) continue;
     if (/^\d+$/.test(line)) continue;
     if (line.length >= 3 && line.length < 90) {
+      if (fromFile) {
+        const a = line.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const b = fromFile.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (a && b && (b.includes(a) || a.includes(b.slice(0, 12)))) {
+          return line.replace(/\s+/g, " ");
+        }
+      }
+    }
+  }
+  for (let i = 0; i < Math.min(lines.length, 40); i += 1) {
+    const line = lines[i];
+    if (/prepwiser|jee main|chapter-wise|pyqs/i.test(line)) continue;
+    const spaces = (line.match(/ /g) || []).length;
+    if (line.length > 8 && spaces / line.length > 0.3) continue;
+    if (line.length >= 3 && line.length < 90 && !/^\d+$/.test(line)) {
       return line.replace(/\s+/g, " ");
     }
   }
-  const fromFile = fileName
-    .replace(/^PrepWiser_/i, "")
-    .replace(/_JEE-Main-PYQs\.pdf$/i, "")
-    .replace(/_/g, " ")
-    .trim();
   return fromFile || "Unknown Chapter";
 }
 
@@ -93,13 +121,6 @@ function buildPageOffsets(text: string): Array<{ offset: number; page: number }>
     pages.push({ offset: m.index, page });
     page += 1;
   }
-  const footer = /(\d+)\s*\/\s*\d+/g;
-  while ((m = footer.exec(text))) {
-    const p = Number(m[1]);
-    if (p > 1 && Number.isFinite(p)) {
-      pages.push({ offset: m.index, page: p });
-    }
-  }
   pages.sort((a, b) => a.offset - b.offset);
   return pages;
 }
@@ -117,7 +138,7 @@ function parseAnswerKey(text: string): Record<string, string> {
   const key: Record<string, string> = {};
   const idx = text.search(/Answer\s*key\s*:/i);
   if (idx < 0) return key;
-  const section = text.slice(idx, idx + 8000);
+  const section = text.slice(idx, idx + 12000);
   const re = /(\d+)\s*[\.\)]\s*([A-D]|-?\d+(?:\.\d+)?)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(section))) {
@@ -135,34 +156,48 @@ type Block = {
   topic: string | null;
 };
 
+const Q_HEADER_RE = /\bQ(\d+)\s+JEE\s+Main\b/gi;
+
 function splitQuestionBlocks(text: string): { blocks: Block[]; topics: Map<number, string> } {
   const topicHits: Array<{ offset: number; topic: string }> = [];
-  const topicRe = /^([A-Za-z][A-Za-z0-9\s&\-,()]+?)\s*[·•|]\s*\d+\s*PYQs?\s*$/gim;
+  const topicRe =
+    /([A-Za-z][A-Za-z0-9\s&\-,()]{2,60}?)\s*[·•|]\s*\d+\s*PYQs?\b/gi;
   let tm: RegExpExecArray | null;
   while ((tm = topicRe.exec(text))) {
     topicHits.push({ offset: tm.index, topic: tm[1].trim() });
   }
 
-  const qRe = /\bQ(\d+)\s+JEE\s+Main[^\n]*/gi;
   const starts: Array<{ num: number; index: number; header: string }> = [];
   let qm: RegExpExecArray | null;
-  while ((qm = qRe.exec(text))) {
-    starts.push({ num: Number(qm[1]), index: qm.index, header: qm[0] });
+  Q_HEADER_RE.lastIndex = 0;
+  while ((qm = Q_HEADER_RE.exec(text))) {
+    const header = text.slice(qm.index, Math.min(text.length, qm.index + 160)).split(/\n/)[0];
+    starts.push({ num: Number(qm[1]), index: qm.index, header });
   }
 
   if (starts.length === 0) {
-    const alt = /\bQ(\d+)\b/gi;
+    const alt = /(?:^|\n)\s*Q(\d+)\b/gi;
     while ((qm = alt.exec(text))) {
-      starts.push({ num: Number(qm[1]), index: qm.index, header: qm[0] });
+      starts.push({
+        num: Number(qm[1]),
+        index: qm.index,
+        header: text.slice(qm.index, qm.index + 40),
+      });
     }
   }
 
   starts.sort((a, b) => a.index - b.index);
+  const answerIdx = text.search(/Answer\s*key\s*:/i);
   const blocks: Block[] = [];
   for (let i = 0; i < starts.length; i += 1) {
     const cur = starts[i];
-    const end = i + 1 < starts.length ? starts[i + 1].index : text.search(/Answer\s*key\s*:/i);
-    const endPos = end > cur.index ? end : text.length;
+    let end =
+      i + 1 < starts.length
+        ? starts[i + 1].index
+        : answerIdx > cur.index
+          ? answerIdx
+          : text.length;
+    if (end <= cur.index) end = text.length;
     let topic: string | null = null;
     for (const t of topicHits) {
       if (t.offset < cur.index) topic = t.topic;
@@ -170,9 +205,9 @@ function splitQuestionBlocks(text: string): { blocks: Block[]; topics: Map<numbe
     blocks.push({
       num: cur.num,
       start: cur.index,
-      end: endPos,
+      end,
       header: cur.header,
-      body: text.slice(cur.index, endPos),
+      body: text.slice(cur.index, end),
       topic,
     });
   }
@@ -182,46 +217,61 @@ function splitQuestionBlocks(text: string): { blocks: Block[]; topics: Map<numbe
 }
 
 function parseOptions(body: string): string[] | null {
-  const opts: string[] = [];
-  const re = /\(([A-D])\)\s*([^\n]*?)(?=\s*\([A-D]\)|$)/gi;
-  let m: RegExpExecArray | null;
   const found = new Map<string, string>();
+  const re = /\(([A-D])\)\s*([^]*?)(?=\s*\([A-D]\)|$)/gi;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(body))) {
-    found.set(m[1].toUpperCase(), normalizeSpace(m[2]));
+    const letter = m[1].toUpperCase();
+    let val = normalizeSpace(m[2]);
+    if (val.length > 400) val = val.slice(0, 400);
+    found.set(letter, val);
   }
   if (found.size >= 2) {
-    for (const letter of ["A", "B", "C", "D"]) {
-      opts.push(found.get(letter) ?? "");
-    }
-    return opts;
+    return ["A", "B", "C", "D"].map((L) => found.get(L) ?? "");
   }
   return null;
 }
 
 function isNumerical(header: string, body: string): boolean {
-  if (/NUMERICAL/i.test(header) || /NUMERICAL/i.test(body.slice(0, 200))) return true;
+  if (/NUMERICAL/i.test(header) || /NUMERICAL/i.test(body.slice(0, 280))) return true;
   if (/_{4,}|\bblank\b|is equal to\s*_/i.test(body) && !/\([A-D]\)/.test(body)) return true;
   return false;
 }
 
+/**
+ * Remove PrepWiser chrome without eating the whole page when text is one long line.
+ * Never use unbounded [^\n]* after the Q header (that wiped stems under pdf.js).
+ */
 function stripHeaderNoise(body: string): string {
-  return body
-    .replace(/\bQ\d+\s+JEE\s+Main[^\n]*/gi, "")
-    .replace(/Step-by-step solution[^\n]*/gi, "")
-    .replace(/prepwiser\.in\/questions\/\S+/gi, "")
-    .replace(/\bNUMERICAL\b/gi, "")
-    .replace(/PrepWiser[^\n]*/gi, "")
-    .trim();
+  let t = body;
+  t = t.replace(
+    /\bQ\d+\s+JEE\s+Main\s+\d{4}\s*[·•.\-]\s*\d{1,2}\s+[A-Za-z]+\s*[·•.\-]\s*Shift\s+\d+/gi,
+    " ",
+  );
+  t = t.replace(/\bQ\d+\s+JEE\s+Main\b/gi, " ");
+  t = t.replace(/\bNUMERICAL\b/gi, " ");
+  t = t.replace(/Step-by-step solution\s*›?\s*/gi, " ");
+  t = t.replace(/prepwiser\.in\/questions\/\S+/gi, " ");
+  t = t.replace(/PrepWiser[^\n]{0,100}/gi, " ");
+  t = t.replace(/Free JEE Main PYQs[^\n]{0,100}/gi, " ");
+  t = t.replace(/\b\d+\s*\/\s*\d+\b/g, " ");
+  t = t.replace(/^\s*\d{4}\s*[·•.\-]\s*\d{1,2}\s+[A-Za-z]+\s*[·•.\-]\s*Shift\s+\d+/i, " ");
+  return t.trim();
 }
 
 function extractQuestionText(body: string, hasOptions: boolean): string {
   let t = stripHeaderNoise(body);
   if (hasOptions) {
     const firstOpt = t.search(/\([A-D]\)/);
-    if (firstOpt > 0) t = t.slice(0, firstOpt);
+    if (firstOpt >= 40) t = t.slice(0, firstOpt);
   }
   t = t.replace(/_{5,}.*$/m, "").trim();
-  return normalizeSpace(t).slice(0, 8000);
+  t = t.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return t.slice(0, 8000);
+}
+
+export function isPlaceholderText(s: string): boolean {
+  return /extraction incomplete|see page\s+\d+/i.test(s) && s.length < 80;
 }
 
 export function parsePrepWiserText(
@@ -255,14 +305,27 @@ export function parsePrepWiserText(
 
     const numerical = isNumerical(block.header, block.body);
     const options = numerical ? null : parseOptions(block.body);
-    const questionText = extractQuestionText(block.body, Boolean(options));
+    let questionText = extractQuestionText(block.body, Boolean(options));
     const flags: string[] = [];
     let needsReview = false;
 
-    if (!questionText || questionText.length < 8) {
+    if (!questionText || questionText.length < 12) {
+      const fallback = normalizeSpace(
+        block.body.slice(0, 2000).replace(/\bQ\d+\s+JEE\s+Main\b/i, "").slice(0, 1500),
+      );
+      if (fallback.length >= 12) {
+        questionText = fallback;
+        flags.push("used_body_fallback");
+        needsReview = true;
+      }
+    }
+
+    if (!questionText || questionText.length < 12) {
       flags.push("short_or_empty_text");
       needsReview = true;
+      questionText = "";
     }
+
     if (!numerical && (!options || options.filter((o) => o).length < 2)) {
       flags.push("options_incomplete");
       needsReview = true;
@@ -275,7 +338,7 @@ export function parsePrepWiserText(
       needsReview = true;
     }
 
-    const sourceMatch = block.header.match(/JEE\s+Main[^\n]*/i);
+    const sourceMatch = block.header.match(/JEE\s+Main[^.\n]{0,80}/i);
     const source = sourceMatch
       ? normalizeSpace(sourceMatch[0]).replace(/Step-by-step.*/i, "").trim()
       : "JEE Main";
@@ -287,29 +350,33 @@ export function parsePrepWiserText(
     }
 
     const pageNumber = pageAt(pages, block.start);
-    const externalKey = [
-      subject,
-      chapter.toLowerCase().replace(/\s+/g, "-"),
-      `q${block.num}`,
-      simpleHash(source + "|" + questionText.slice(0, 120)),
-    ].join("|");
+    const externalKey = `${subject}|${chapterSlug(chapter)}|q${block.num}`;
+
+    const displayText = questionText.length >= 12 ? questionText : "";
 
     questions.push({
       externalKey,
       questionNumber: block.num,
       source,
       type: options && options.filter(Boolean).length >= 2 ? "mcq" : "integer",
-      questionText: questionText || `[See page ${pageNumber} — extraction incomplete]`,
+      questionText: displayText,
       options: options && options.some(Boolean) ? options : null,
       correctAnswer: ans,
       topic: block.topic,
       pageNumber,
-      needsReview,
-      flags,
+      needsReview: needsReview || displayText.length < 12,
+      flags: displayText.length < 12 ? [...flags, "extraction_failed"] : flags,
     });
   }
 
   questions.sort((a, b) => (a.questionNumber ?? 0) - (b.questionNumber ?? 0));
+
+  const failed = questions.filter((q) => q.flags.includes("extraction_failed")).length;
+  if (failed > 0) {
+    warnings.push(
+      `${failed} question(s) had empty/short stems after extraction — flagged for manual review (not filled with fake text).`,
+    );
+  }
 
   return {
     chapter,
