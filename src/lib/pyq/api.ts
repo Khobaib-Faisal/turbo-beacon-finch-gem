@@ -51,16 +51,25 @@ export const extractPyqFromText = createServerFn({ method: "POST" })
     return parsePrepWiserText(data.text, { fileName: data.fileName, subject: data.subject });
   });
 
+/** Insert or update by external_key. Never sets answer_verified=true. */
 export const importPyqQuestions = createServerFn({ method: "POST" })
   .middleware([adminMiddleware])
-  .validator((input: { questions: ImportQuestionInput[] }) => {
+  .validator((input: { questions: ImportQuestionInput[]; mode?: "insert" | "upsert" }) => {
     if (!input?.questions || !Array.isArray(input.questions)) throw new Error("No questions to import.");
     if (input.questions.length === 0) throw new Error("No questions to import.");
     if (input.questions.length > 500) throw new Error("Max 500 questions per batch.");
+    const mode = input.mode === "insert" ? "insert" : "upsert";
     return {
+      mode,
       questions: input.questions.map((q) => {
-        if (!q.externalKey || !q.chapter || !q.questionText) {
-          throw new Error("Each question needs externalKey, chapter, and text.");
+        if (!q.externalKey || !q.chapter) {
+          throw new Error("Each question needs externalKey and chapter.");
+        }
+        if (typeof q.questionText !== "string") {
+          throw new Error("questionText must be a string.");
+        }
+        if (!q.questionText.trim() && !q.needsReview) {
+          throw new Error("Empty question text must be marked needsReview.");
         }
         if (!isSubject(q.subject)) throw new Error("Invalid subject.");
         if (q.type !== "mcq" && q.type !== "integer") throw new Error("Invalid type.");
@@ -71,30 +80,72 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await getSql();
     let inserted = 0;
+    let updated = 0;
     let skipped = 0;
     for (const q of data.questions) {
       const id = crypto.randomUUID();
       const optionsJson = q.options ? JSON.stringify(q.options) : null;
-      const rows = await sql.query<{ id: string }>(
-        `insert into pyq_questions (
-          id, subject, chapter, topic, source, question_number, type,
-          question_text, options, correct_answer, explanation,
-          answer_verified, needs_review, page_number, source_pdf, external_key
-        ) values (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16
-        )
-        on conflict (external_key) do nothing
-        returning id`,
-        [
-          id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
-          q.questionText, optionsJson, q.correctAnswer, "", false,
-          Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
-        ],
-      );
-      if (rows[0]) inserted += 1;
-      else skipped += 1;
+      if (data.mode === "insert") {
+        const rows = await sql.query<{ id: string }>(
+          `insert into pyq_questions (
+            id, subject, chapter, topic, source, question_number, type,
+            question_text, options, correct_answer, explanation,
+            answer_verified, needs_review, page_number, source_pdf, external_key
+          ) values (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16
+          )
+          on conflict (external_key) do nothing
+          returning id`,
+          [
+            id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
+            q.questionText, optionsJson, q.correctAnswer, "", false,
+            Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
+          ],
+        );
+        if (rows[0]) inserted += 1;
+        else skipped += 1;
+      } else {
+        const rows = await sql.query<{ id: string; is_insert: boolean }>(
+          `insert into pyq_questions (
+            id, subject, chapter, topic, source, question_number, type,
+            question_text, options, correct_answer, explanation,
+            answer_verified, needs_review, page_number, source_pdf, external_key
+          ) values (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16
+          )
+          on conflict (external_key) do update set
+            subject = excluded.subject,
+            chapter = excluded.chapter,
+            topic = excluded.topic,
+            source = excluded.source,
+            question_number = excluded.question_number,
+            type = excluded.type,
+            question_text = excluded.question_text,
+            options = excluded.options,
+            correct_answer = case
+              when pyq_questions.answer_verified then pyq_questions.correct_answer
+              else excluded.correct_answer
+            end,
+            needs_review = excluded.needs_review,
+            page_number = excluded.page_number,
+            source_pdf = excluded.source_pdf,
+            updated_at = now()
+          returning id, (xmax = 0) as is_insert`,
+          [
+            id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
+            q.questionText, optionsJson, q.correctAnswer, "", false,
+            Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
+          ],
+        );
+        if (rows[0]) {
+          if (rows[0].is_insert) inserted += 1;
+          else updated += 1;
+        } else {
+          skipped += 1;
+        }
+      }
     }
-    return { inserted, skipped, total: data.questions.length };
+    return { inserted, updated, skipped, total: data.questions.length, mode: data.mode };
   });
 
 export const listPyqChapters = createServerFn({ method: "GET" })
@@ -135,18 +186,24 @@ export const listPyqChapters = createServerFn({ method: "GET" })
         }
       }
       const type = row.type === "mcq" ? "mcq" : "integer";
+      const stem = row.question_text || "";
+      const isEmpty = !stem.trim();
       bundle.questions.push({
         id: row.id,
         source: row.source,
         type,
-        question: row.question_text,
+        question: isEmpty
+          ? `[Extraction incomplete — see PDF page ${row.page_number ?? "?"}]`
+          : stem,
         options,
         correctAnswer: correctAnswerToNumber(type, row.correct_answer),
         explanation:
           row.explanation ||
-          (row.answer_verified ? "" : "Answer key imported but not verified yet."),
+          (row.answer_verified
+            ? ""
+            : "Answer key imported but not verified yet."),
         pageNumber: row.page_number,
-        needsReview: Boolean(row.needs_review),
+        needsReview: Boolean(row.needs_review) || isEmpty,
         answerVerified: Boolean(row.answer_verified),
       });
     }
@@ -161,8 +218,15 @@ export const getPyqImportStats = createServerFn({ method: "GET" })
       select subject, count(*)::int as n from pyq_questions group by subject
     `;
     const total = await sql<{ n: number }>`select count(*)::int as n from pyq_questions`;
+    const bad = await sql<{ n: number }>`
+      select count(*)::int as n from pyq_questions
+      where question_text = '' or question_text is null
+         or question_text ilike '%extraction incomplete%'
+         or question_text ilike '%see page%'
+    `;
     return {
       total: total[0]?.n ?? 0,
       bySubject: Object.fromEntries(rows.map((r) => [r.subject, r.n])),
+      needsRepair: bad[0]?.n ?? 0,
     };
   });
