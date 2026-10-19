@@ -329,6 +329,8 @@ export function parsePrepWiserText(
     const source = sourceMatch
       ? normalizeSpace(sourceMatch[0]).replace(/Step-by-step.*/i, "").trim()
       : "JEE Main";
+    const yearMatch = `${source} ${opts.fileName} ${block.header}`.match(/\b(20(?:1[3-9]|2[0-6]))\b/);
+    const year = yearMatch ? Number(yearMatch[1]) : null;
 
     const ans = answerKey[String(block.num)] ?? null;
     if (!ans) {
@@ -363,6 +365,7 @@ export function parsePrepWiserText(
       externalKey,
       questionNumber: block.num,
       source,
+      year,
       type: qType,
       questionText: displayText,
       options: qType === "mcq" ? (options && options.some(Boolean) ? options : null) : null,

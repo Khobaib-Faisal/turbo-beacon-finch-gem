@@ -7,6 +7,7 @@ export type ExtractedQuestion = {
   externalKey: string;
   questionNumber: number | null;
   source: string;
+  year: number | null;
   type: PyqQuestionType;
   questionText: string;
   options: string[] | null;
@@ -35,6 +36,7 @@ export type ImportQuestionInput = {
   chapter: string;
   topic: string | null;
   source: string;
+  year: number | null;
   questionNumber: number | null;
   type: PyqQuestionType;
   questionText: string;
@@ -71,6 +73,7 @@ export type ChapterBundle = {
   questions: Array<{
     id: string;
     source: string;
+    year?: number | null;
     type: PyqQuestionType;
     question: string;
     options?: string[];

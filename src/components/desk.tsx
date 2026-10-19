@@ -47,6 +47,7 @@ type ActiveTab = "tracker" | "pyq" | "books" | "tests" | "ai";
 export interface QuestionItem {
   id: string;
   source: string;
+  year?: number | null;
   type: "mcq" | "integer";
   question: string;
   imageUrl?: string;
@@ -201,6 +202,7 @@ export function DeskApp() {
 
   // PYQ Section Navigation states
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
+  const [selectedPyqYear, setSelectedPyqYear] = useState<string>("all");
   const [activeQuestionIdx, setActiveQuestionIdx] = useState<number | null>(null);
   const [loadedQuestionImage, setLoadedQuestionImage] = useState<{ id: string; url: string | null } | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -346,8 +348,15 @@ export function DeskApp() {
   }
 
   const currentChapterObj = pyqChapters.find((c) => c.chapter === selectedChapter);
+  const chapterYearOptions = currentChapterObj
+    ? [...new Set(currentChapterObj.questions.map((question) => question.year).filter((year): year is number => Number.isInteger(year)))].sort((a, b) => b - a)
+    : [];
+  const visibleChapterQuestions = currentChapterObj
+    ? currentChapterObj.questions.filter((question) => selectedPyqYear === "all"
+      || (selectedPyqYear === "unknown" ? question.year == null : question.year === Number(selectedPyqYear)))
+    : [];
   const activeQuestion = currentChapterObj && activeQuestionIdx !== null
-    ? currentChapterObj.questions[activeQuestionIdx]
+    ? visibleChapterQuestions[activeQuestionIdx]
     : null;
   const activeQuestionImage = activeQuestion?.hasVisualImage
     ? loadedQuestionImage?.id === activeQuestion.id
@@ -641,6 +650,7 @@ export function DeskApp() {
                         type="button"
                         onClick={() => {
                           setSelectedChapter(ch.chapter);
+                          setSelectedPyqYear("all");
                           setActiveQuestionIdx(null);
                           resetQuestionState();
                         }}
@@ -675,13 +685,20 @@ export function DeskApp() {
                 <span className="text-xs font-semibold text-fg">{selectedChapter}</span>
               </div>
 
-              {currentChapterObj.questions.length === 0 ? (
+              {chapterYearOptions.length > 0 ? <label className="mt-4 block text-xs font-medium text-muted">Filter by exam year
+                <select value={selectedPyqYear} onChange={(event) => setSelectedPyqYear(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg sm:w-64">
+                  <option value="all">All years ({currentChapterObj.questions.length})</option>
+                  {chapterYearOptions.map((year) => <option key={year} value={String(year)}>{year} ({currentChapterObj.questions.filter((question) => question.year === year).length})</option>)}
+                  {currentChapterObj.questions.some((question) => question.year == null) ? <option value="unknown">Year not set ({currentChapterObj.questions.filter((question) => question.year == null).length})</option> : null}
+                </select>
+              </label> : <p className="mt-3 text-xs text-muted">Year tags are not set for these questions yet.</p>}
+              {visibleChapterQuestions.length === 0 ? (
                 <div className="mt-6 rounded-xl border border-dashed border-line p-8 text-center text-xs text-muted">
                   No questions added in this chapter yet.
                 </div>
               ) : (
                 <div className="mt-4 space-y-2">
-                  {currentChapterObj.questions.map((q, idx) => {
+                  {visibleChapterQuestions.map((q, idx) => {
                     const isDone = solvedIds.includes(q.id);
                     return (
                       <button
@@ -739,7 +756,7 @@ export function DeskApp() {
                     {activeQuestion.source}
                   </span>
                   <span className="text-xs text-muted tabular-nums">
-                    Q {activeQuestionIdx + 1} of {currentChapterObj.questions.length}
+                    Q {activeQuestionIdx + 1} of {visibleChapterQuestions.length}
                   </span>
                 </div>
               </div>
@@ -862,10 +879,10 @@ export function DeskApp() {
 
                 <button
                   type="button"
-                  disabled={activeQuestionIdx === currentChapterObj.questions.length - 1}
+                  disabled={activeQuestionIdx === visibleChapterQuestions.length - 1}
                   onClick={() => {
                     setActiveQuestionIdx((prev) => 
-                      prev !== null && prev < currentChapterObj.questions.length - 1 ? prev + 1 : prev
+                      prev !== null && prev < visibleChapterQuestions.length - 1 ? prev + 1 : prev
                     );
                     resetQuestionState();
                   }}

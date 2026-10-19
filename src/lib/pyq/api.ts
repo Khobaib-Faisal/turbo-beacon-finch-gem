@@ -81,6 +81,9 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
           throw new Error("Empty question text must be marked needsReview.");
         }
         if (!isSubject(q.subject)) throw new Error("Invalid subject.");
+        if (q.year != null && (!Number.isInteger(q.year) || q.year < 2000 || q.year > 2035)) {
+          throw new Error("Year must be a valid exam year.");
+        }
         if (q.type !== "mcq" && q.type !== "integer") throw new Error("Invalid type.");
         return q;
       }),
@@ -100,9 +103,9 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             id, subject, chapter, topic, source, question_number, type,
             question_text, options, correct_answer, explanation,
             answer_verified, needs_review, page_number, source_pdf, external_key,
-            question_image_url
+            question_image_url, year
           ) values (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17
+            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18
           )
           on conflict (external_key) do nothing
           returning id`,
@@ -110,7 +113,7 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
             q.questionText, optionsJson, q.correctAnswer, "", false,
             Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
-            q.questionImageUrl ?? null,
+            q.questionImageUrl ?? null, q.year,
           ],
         );
         if (rows[0]) inserted += 1;
@@ -121,9 +124,9 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             id, subject, chapter, topic, source, question_number, type,
             question_text, options, correct_answer, explanation,
             answer_verified, needs_review, page_number, source_pdf, external_key,
-            question_image_url
+            question_image_url, year
           ) values (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17
+            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18
           )
           on conflict (external_key) do update set
             subject = excluded.subject,
@@ -142,13 +145,14 @@ export const importPyqQuestions = createServerFn({ method: "POST" })
             page_number = excluded.page_number,
             source_pdf = excluded.source_pdf,
             question_image_url = coalesce(excluded.question_image_url, pyq_questions.question_image_url),
+            year = coalesce(excluded.year, pyq_questions.year),
             updated_at = now()
           returning id, (xmax = 0) as is_insert`,
           [
             id, q.subject, q.chapter, q.topic, q.source, q.questionNumber, q.type,
             q.questionText, optionsJson, q.correctAnswer, "", false,
             Boolean(q.needsReview), q.pageNumber, q.sourcePdf, q.externalKey,
-            q.questionImageUrl ?? null,
+            q.questionImageUrl ?? null, q.year,
           ],
         );
         if (rows[0]) {
@@ -177,10 +181,11 @@ export const listPyqChapters = createServerFn({ method: "GET" })
       explanation: string; page_number: number | null; needs_review: boolean;
       answer_verified: boolean;
       question_image_url: string | null;
+      year: number | null;
     }>`
       select id, subject, chapter, source, type, question_text, options,
              correct_answer, explanation, page_number, needs_review, answer_verified,
-             question_image_url
+             question_image_url, year
       from pyq_questions
       where subject = ${data.subject}
       order by chapter asc, question_number asc nulls last, created_at asc
@@ -207,6 +212,7 @@ export const listPyqChapters = createServerFn({ method: "GET" })
       bundle.questions.push({
         id: row.id,
         source: row.source,
+        year: row.year,
         type,
         question: isEmpty
           ? `[Extraction incomplete — see PDF page ${row.page_number ?? "?"}]`
