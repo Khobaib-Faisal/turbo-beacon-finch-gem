@@ -16,6 +16,8 @@ export type ExtractedQuestion = {
   pageNumber: number | null;
   needsReview: boolean;
   flags: string[];
+  /** Client-rendered crop from the source PDF, preserving equations and diagrams. */
+  questionImageUrl?: string | null;
 };
 
 export type ExtractResult = {
@@ -41,6 +43,7 @@ export type ImportQuestionInput = {
   pageNumber: number | null;
   needsReview: boolean;
   sourcePdf: string;
+  questionImageUrl?: string | null;
 };
 
 export type StoredPyqQuestion = {
@@ -74,6 +77,8 @@ export type ChapterBundle = {
     correctAnswer: number;
     explanation: string;
     imageUrl?: string;
+    visualQuestion?: boolean;
+    hasVisualImage?: boolean;
     pageNumber?: number | null;
     needsReview?: boolean;
     answerVerified?: boolean;
