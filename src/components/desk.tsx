@@ -30,6 +30,7 @@ import {
   undoLastLecture,
 } from "@/lib/jee/api";
 import { getPyqQuestionImage, listPyqChapters } from "@/lib/pyq/api";
+import { TestGenerator } from "@/components/test-generator";
 import { mergeVaultChapters } from "@/lib/pyq/merge-chapters";
 import { daysBetween, formatHours, formatLong } from "@/lib/jee/pace";
 import type { Bucket, Desk, DeskResult, DeskSettings, QuestionDay, Reward, SubjectId } from "@/lib/jee/types";
@@ -910,20 +911,7 @@ export function DeskApp() {
       )}
 
       {/* TAB 4: TEST GENERATOR */}
-      {activeTab === "tests" && (
-        <section className="mt-4 rounded-2xl border border-line bg-surface p-5 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between border-b border-line pb-4">
-            <div>
-              <h2 className="text-lg font-semibold text-fg">Test Generator</h2>
-              <p className="text-xs text-muted">Timed mixed mock practice across chapters.</p>
-            </div>
-            <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">Phase 3</span>
-          </div>
-          <p className="mt-4 text-xs text-muted">
-            Configure full timed mocks across chapters once question banks are loaded.
-          </p>
-        </section>
-      )}
+      {activeTab === "tests" && <TestGenerator />}
 
       {/* TAB 5: AI COACH */}
       {activeTab === "ai" && (
