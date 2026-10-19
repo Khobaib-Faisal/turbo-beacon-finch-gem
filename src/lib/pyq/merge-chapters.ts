@@ -3,6 +3,7 @@ import type { SubjectId } from "@/lib/jee/types";
 export type VaultQuestion = {
   id: string;
   source: string;
+  year?: number | null;
   type: "mcq" | "integer";
   question: string;
   imageUrl?: string;

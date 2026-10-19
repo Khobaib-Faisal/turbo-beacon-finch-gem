@@ -147,6 +147,7 @@ function PyqImportPage() {
   const [adminOk, setAdminOk] = useState<boolean | null>(null);
   const [fileName, setFileName] = useState("");
   const [subject, setSubject] = useState<SubjectId>("maths");
+  const [defaultYear, setDefaultYear] = useState<number | "">("");
   const [upsert, setUpsert] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +223,8 @@ function PyqImportPage() {
     setResult(null);
     setRows([]);
     setFileName(file.name);
+    const detectedYear = file.name.match(/\b(20(?:1[3-9]|2[0-6]))\b/);
+    setDefaultYear(detectedYear ? Number(detectedYear[1]) : "");
     setBusy(true);
     try {
       const { text, questionCrops } = await extractTextFromPdf(file);
@@ -252,6 +255,7 @@ function PyqImportPage() {
       setRows(
         questions.map((q) => ({
           ...q,
+          year: q.year ?? (detectedYear ? Number(detectedYear[1]) : null),
           keep:
             Boolean(q.questionImageUrl) ||
             (Boolean(q.questionText.trim()) &&
@@ -286,6 +290,7 @@ function PyqImportPage() {
           chapter: result.chapter,
           topic: q.topic,
           source: q.source,
+          year: q.year,
           questionNumber: q.questionNumber,
           type: q.type,
           questionText: q.questionText,
@@ -446,6 +451,16 @@ function PyqImportPage() {
             <option value="chemistry">Chemistry</option>
           </select>
         </label>
+        <label className="block text-sm font-medium text-fg">Year for this PDF
+          <input type="number" min="2000" max="2035" placeholder="e.g. 2024" value={defaultYear}
+            onChange={(e) => {
+              const value = e.target.value ? Number(e.target.value) : "";
+              setDefaultYear(value);
+              setRows((current) => current.map((row) => ({ ...row, year: value === "" ? null : value })));
+            }}
+            className="mt-1 w-full min-h-11 rounded-xl border border-line bg-bg px-3 text-base text-fg" />
+          <span className="mt-1 block text-xs text-muted">Applied to every question in this PDF. You can still correct an individual question below.</span>
+        </label>
         <label className="flex items-center gap-2 text-sm text-fg">
           <input
             type="checkbox"
@@ -555,6 +570,12 @@ function PyqImportPage() {
                         Q{row.questionNumber ?? "?"} · {row.type}
                       </span>
                       <span className="text-xs text-muted">{row.source}</span>
+                      <label className="text-xs text-muted">Year
+                        <input type="number" min="2000" max="2035" placeholder="Year"
+                          className="ml-2 w-20 rounded-lg border border-line bg-bg px-2 py-1 text-sm text-fg"
+                          value={row.year ?? ""}
+                          onChange={(e) => updateRow(idx, { year: e.target.value ? Number(e.target.value) : null })} />
+                      </label>
                       {row.pageNumber != null ? (
                         <span className="rounded-md bg-raised px-1.5 py-0.5 text-[10px] text-muted">
                           p.{row.pageNumber}
