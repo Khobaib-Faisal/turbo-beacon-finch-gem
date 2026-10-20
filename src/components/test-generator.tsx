@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrainCircuit, ExternalLink, History, Layers3, RefreshCw, ShieldCheck } from "lucide-react";
 import { createTestAttempt, listTestAttempts, type TestAttempt } from "@/lib/jee/test-attempts";
-import { getPyqQuestionImage, listPyqChapters } from "@/lib/pyq/api";
+import { getPyqQuestionImage, listPyqChapters, listSolvedPyqQuestionIds } from "@/lib/pyq/api";
 import { mergeVaultChapters, type VaultChapter, type VaultQuestion } from "@/lib/pyq/merge-chapters";
 import type { SubjectId } from "@/lib/jee/types";
 
@@ -13,6 +13,7 @@ const SUBJECTS: Array<{ id: SubjectId; name: string }> = [
 
 type BankQuestion = VaultQuestion & { subject: SubjectId; chapter: string };
 type Mode = "custom" | "jee-main";
+type SolvedFilter = "all" | "unsolved" | "solved";
 type ChapterSelections = Partial<Record<SubjectId, string[]>>;
 
 function shuffle<T>(items: T[]): T[] {
@@ -67,6 +68,10 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
   const [mode, setMode] = useState<Mode>("custom");
   const [selectedSubjects, setSelectedSubjects] = useState<SubjectId[]>(["physics", "chemistry", "maths"]);
   const [chapterSelections, setChapterSelections] = useState<ChapterSelections>({});
+  const [solvedFilter, setSolvedFilter] = useState<SolvedFilter>("unsolved");
+  const [solvedIds, setSolvedIds] = useState<string[]>([]);
+  const [progressLoading, setProgressLoading] = useState(true);
+  const [progressError, setProgressError] = useState<string | null>(null);
   const [questionCount, setQuestionCount] = useState(30);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -74,6 +79,18 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+
+  const refreshSolvedProgress = useCallback(async () => {
+    setProgressLoading(true);
+    try {
+      setSolvedIds(await listSolvedPyqQuestionIds());
+      setProgressError(null);
+    } catch (error) {
+      setProgressError(error instanceof Error ? error.message : "Could not load your solved-question progress.");
+    } finally {
+      setProgressLoading(false);
+    }
+  }, []);
 
   const refreshHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -110,8 +127,9 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
       if (!cancelled) setLoading(false);
     });
     void refreshHistory();
+    void refreshSolvedProgress();
     return () => { cancelled = true; };
-  }, [refreshHistory]);
+  }, [refreshHistory, refreshSolvedProgress]);
 
   useEffect(() => {
     const update = () => { if (document.visibilityState === "visible") void refreshHistory(); };
@@ -122,6 +140,16 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
       document.removeEventListener("visibilitychange", update);
     };
   }, [refreshHistory]);
+
+  useEffect(() => {
+    const update = () => { if (document.visibilityState === "visible") void refreshSolvedProgress(); };
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [refreshSolvedProgress]);
 
   const bank = useMemo(() => chapters.flatMap((chapter) =>
     chapter.questions.filter(usable).map((question) => ({
@@ -143,14 +171,22 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
     return chaptersForSubject === undefined || chaptersForSubject.includes(question.chapter);
   }), [bank, selectedSubjects, chapterSelections]);
 
+  const solvedIdSet = useMemo(() => new Set(solvedIds), [solvedIds]);
+  const poolBySolvedFilter = useCallback((pool: BankQuestion[]) => pool.filter((question) => {
+    const solved = solvedIdSet.has(question.id);
+    return solvedFilter === "all" || (solvedFilter === "solved" ? solved : !solved);
+  }), [solvedFilter, solvedIdSet]);
+  const eligibleBank = useMemo(() => poolBySolvedFilter(bank), [bank, poolBySolvedFilter]);
+  const eligibleSelectedPool = useMemo(() => poolBySolvedFilter(selectedPool), [selectedPool, poolBySolvedFilter]);
+
   const countsBySubject = useMemo(() => Object.fromEntries(SUBJECTS.map(({ id }) => {
-    const scoped = selectedPool.filter((question) => question.subject === id);
+    const scoped = eligibleSelectedPool.filter((question) => question.subject === id);
     return [id, {
       total: scoped.length,
       mcq: scoped.filter((question) => question.type === "mcq").length,
       numerical: scoped.filter((question) => question.type === "integer").length,
     }];
-  })) as Record<SubjectId, { total: number; mcq: number; numerical: number }>, [selectedPool]);
+  })) as Record<SubjectId, { total: number; mcq: number; numerical: number }>, [eligibleSelectedPool]);
 
   const balanceError = selectedSubjects.length > 0 && questionCount % selectedSubjects.length !== 0
     ? `Choose a question count divisible by ${selectedSubjects.length} selected subject${selectedSubjects.length > 1 ? "s" : ""} for an equal split.`
@@ -158,7 +194,7 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
   const perSubject = selectedSubjects.length ? questionCount / selectedSubjects.length : 0;
   const shortage = selectedSubjects.find((subject) => countsBySubject[subject].total < perSubject);
   const fullReady = SUBJECTS.every(({ id }) => {
-    const pool = bank.filter((question) => question.subject === id);
+    const pool = eligibleBank.filter((question) => question.subject === id);
     return pool.filter((question) => question.type === "mcq").length >= 20 &&
       pool.filter((question) => question.type === "integer").length >= 5;
   });
@@ -189,6 +225,8 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
   async function startTest() {
     setConfigError(null);
     if (starting) return;
+    if (progressLoading) { setConfigError("Loading your solved-question progress. Please wait a moment."); return; }
+    if (progressError) { setConfigError("Could not load your saved solved-question progress. Refresh the page and try again."); return; }
     const subjects = SUBJECTS.map((subject) => subject.id).filter((subject) =>
       mode === "jee-main" || selectedSubjects.includes(subject),
     );
@@ -209,7 +247,7 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
       let selected: BankQuestion[] = [];
       if (mode === "jee-main") {
         for (const subject of SUBJECTS) {
-          const pool = bank.filter((question) => question.subject === subject.id);
+          const pool = eligibleBank.filter((question) => question.subject === subject.id);
           const mcq = shuffle(pool.filter((question) => question.type === "mcq"));
           const numerical = shuffle(pool.filter((question) => question.type === "integer"));
           if (mcq.length < 20 || numerical.length < 5) {
@@ -221,7 +259,7 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
         if (balanceError) throw new Error(balanceError);
         if (shortage) throw new Error(`${SUBJECTS.find((item) => item.id === shortage)?.name} has only ${countsBySubject[shortage].total} usable questions. Select fewer questions or more chapters.`);
         for (const subject of subjects) {
-          selected.push(...shuffle(selectedPool.filter((question) => question.subject === subject)).slice(0, perSubject));
+          selected.push(...shuffle(eligibleSelectedPool.filter((question) => question.subject === subject)).slice(0, perSubject));
         }
       }
       const title = mode === "jee-main" ? "JEE Main Paper 1 · 75 Questions" : `Custom PYQ test · ${questionCount} questions`;
@@ -259,10 +297,23 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
             <h2 className="mt-1 text-lg font-semibold text-fg">Create a JEE Main test</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted">Choose chapters, balance Physics, Chemistry and Maths, set the timer, and start in a separate tab.</p>
           </div>
-          <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">{bank.length} readable questions with answer keys</span>
+          <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-medium text-accent">{eligibleBank.length} {solvedFilter === "all" ? "readable" : solvedFilter === "solved" ? "solved" : "unsolved"} questions with answer keys</span>
         </div>
 
         {loadError ? <p role="alert" className="mt-4 rounded-xl border border-line bg-bg p-3 text-sm text-muted">{loadError}</p> : null}
+        {progressError ? <p role="alert" className="mt-4 rounded-xl border border-amber-500/30 bg-bg p-3 text-sm text-amber-200">Could not load solved-question progress. Refresh the page to use the solved/unsolved filter safely.</p> : null}
+
+        <div className="mt-4 rounded-xl border border-line bg-bg p-3">
+          <label className="block text-xs font-semibold text-fg" htmlFor="test-solved-filter">Question status</label>
+          <select id="test-solved-filter" value={solvedFilter} onChange={(event) => setSolvedFilter(event.target.value as SolvedFilter)}
+            disabled={progressLoading || Boolean(progressError)}
+            className="mt-2 min-h-11 w-full rounded-xl border border-line bg-surface px-3 text-sm text-fg disabled:opacity-50">
+            <option value="unsolved">Unsolved questions only</option>
+            <option value="solved">Solved questions only</option>
+            <option value="all">Both solved and unsolved</option>
+          </select>
+          <p className="mt-1 text-xs text-muted">{progressLoading ? "Loading your saved progress…" : solvedIds.length + " questions solved so far. Repeated test questions won’t earn extra XP."}</p>
+        </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <button type="button" onClick={() => { setMode("custom"); setConfigError(null); }}
@@ -346,7 +397,7 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
                 <p className="text-sm font-medium text-fg">Full-paper question pool</p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
                   {SUBJECTS.map(({ id, name }) => {
-                    const pool = bank.filter((question) => question.subject === id);
+                    const pool = eligibleBank.filter((question) => question.subject === id);
                     const mcq = pool.filter((question) => question.type === "mcq").length;
                     const numerical = pool.filter((question) => question.type === "integer").length;
                     return <div key={id} className="rounded-lg border border-line bg-surface px-3 py-2"><p className="text-xs font-semibold text-fg">{name}</p><p className="mt-1 text-xs text-muted">{mcq} MCQ · {numerical} numerical</p><p className="mt-1 text-[11px] text-muted">{mcq >= 20 && numerical >= 5 ? "Quota ready" : "More keyed questions needed"}</p></div>;
@@ -358,7 +409,7 @@ export function TestGenerator({ onAskAi }: { onAskAi?: (context: string) => void
         )}
 
         {configError ? <p role="alert" className="mt-4 rounded-xl border border-line bg-bg p-3 text-sm text-muted">{configError}</p> : null}
-        <button type="button" disabled={starting || (mode === "jee-main" ? !fullReady : !selectedSubjects.length || Boolean(balanceError) || Boolean(shortage))}
+        <button type="button" disabled={starting || progressLoading || Boolean(progressError) || (mode === "jee-main" ? !fullReady : !selectedSubjects.length || Boolean(balanceError) || Boolean(shortage))}
           onClick={() => void startTest()} className={button + " mt-4 w-full sm:w-auto"}>
           {starting ? "Preparing separate test tab…" : mode === "jee-main" ? "Start 75-question JEE Main test" : "Create and open custom test"}
         </button>
