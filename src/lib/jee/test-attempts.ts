@@ -316,9 +316,10 @@ export const completeTestAttempt = createServerFn({ method: "POST" })
 
     // Award the same four XP used for a first-time Vault solve.
     const xpBySubject: Record<SubjectId, number> = { physics: 0, chemistry: 0, maths: 0 };
-    const newlySolvedSet = new Set(newlySolved);
-    for (const question of analysis.questions) {
-      if (newlySolvedSet.has(question.id)) xpBySubject[question.subject] += 4;
+    const questionById = new Map(analysis.questions.map((question) => [question.id, question]));
+    for (const id of newlySolved) {
+      const question = questionById.get(id);
+      if (question) xpBySubject[question.subject] += 4;
     }
     const xpAdditions = Object.entries(xpBySubject) as Array<[SubjectId, number]>;
     if (newlySolved.length > 0) {
