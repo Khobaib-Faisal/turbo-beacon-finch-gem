@@ -297,6 +297,41 @@ export const completeTestAttempt = createServerFn({ method: "POST" })
     const questions = row.question_snapshot;
     const answers = safeAnswers(data.answers, questions);
     const analysis = calculateAnalysis(questions, answers, data.secondsByQuestion, data.elapsedSeconds);
+
+    // A correctly answered PYQ should count in the Vault once, no matter how many tests include it.
+    const solvedIds = [...new Set(analysis.questions
+      .filter((question) => question.isCorrect === true)
+      .map((question) => question.id))];
+    let newlySolved: string[] = [];
+    if (solvedIds.length > 0) {
+      const saved = await sql.query<{ question_id: string }>(
+        `insert into pyq_solved_questions (user_id, question_id)
+         select $1, unnest($2::text[])
+         on conflict (user_id, question_id) do nothing
+         returning question_id`,
+        [context.userId, solvedIds],
+      );
+      newlySolved = saved.map((item) => item.question_id);
+    }
+
+    // Award the same four XP used for a first-time Vault solve.
+    const xpBySubject: Record<SubjectId, number> = { physics: 0, chemistry: 0, maths: 0 };
+    const newlySolvedSet = new Set(newlySolved);
+    for (const question of analysis.questions) {
+      if (newlySolvedSet.has(question.id)) xpBySubject[question.subject] += 4;
+    }
+    const xpAdditions = Object.entries(xpBySubject) as Array<[SubjectId, number]>;
+    if (newlySolved.length > 0) {
+      await sql.query(
+        `insert into question_days (user_id, day, physics, chemistry, maths)
+         values ($1, (now() at time zone 'Asia/Kolkata')::date, $2, $3, $4)
+         on conflict (user_id, day) do update set
+           physics = question_days.physics + excluded.physics,
+           chemistry = question_days.chemistry + excluded.chemistry,
+           maths = question_days.maths + excluded.maths`,
+        [context.userId, (now() at time zone "Asia/Kolkata").toISOString().slice(0, 10), ...xpAdditions.map(([, xp]) => xp / 4)],
+      );
+    }
     await sql.query(
       `update jee_test_attempts set
         answer_snapshot = $3::jsonb,
