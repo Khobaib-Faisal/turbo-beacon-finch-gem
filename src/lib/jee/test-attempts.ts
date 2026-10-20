@@ -360,19 +360,40 @@ export const generateTestInsights = createServerFn({ method: "POST" })
     }));
     const prompt = `You are a careful JEE Main performance coach. Analyze only the supplied test evidence. Do not claim certainty about a student's mental state: label careless mistakes as possible signs (for example, a fast wrong answer or a correct concept with a likely execution slip) and say when evidence is insufficient. Chapter labels: strong means at least 75% correct with at least 2 questions; moderate means 45%-74% with at least 2 questions; needs attention means below 45% with at least 2 questions. If fewer than 2 questions exist, say more practice is needed to assess. Conceptual gaps should cite the question/chapter evidence and distinguish them from speed/accuracy issues. Return ONLY valid JSON with string fields/arrays: {"summary":"...","conceptualGaps":["..."],"carelessMistakes":["..."],"strongChapters":["..."],"moderateChapters":["..."],"needsAttention":["..."],"nextSteps":["..."]}. Keep advice specific and actionable.\n\nTest totals: score ${analysis.score}/${analysis.maxScore}; ${analysis.correct} correct, ${analysis.incorrect} wrong, ${analysis.unanswered} unanswered; duration ${analysis.elapsedSeconds} seconds.\nChapter counts: ${JSON.stringify([...chapterStats.entries()].map(([chapter, stats]) => ({ chapter, ...stats })))}\nQuestion evidence: ${JSON.stringify(questionReview)}`;
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(apiKey), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
-    });
-    const payload = await response.json() as {
+    let response: Response | undefined;
+    let payload: {
       error?: { message?: string };
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    if (!response.ok) throw new Error(payload.error?.message || "Gemini could not analyze this test right now.");
+    } | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(apiKey), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+            contents: [{ parts: [{ text: prompt }] }],
+          }),
+        });
+        payload = await response.json() as {
+          error?: { message?: string };
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        };
+      } catch (error) {
+        if (attempt === 2) throw error;
+      }
+
+      if (response?.ok) break;
+      const retryable = !response || response.status === 429 || response.status === 500 ||
+        response.status === 502 || response.status === 503 || response.status === 504;
+      if (!retryable || attempt === 2) {
+        throw new Error(payload?.error?.message || "Gemini could not analyze this test right now.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800 * 2 ** attempt));
+    }
+    if (!response?.ok || !payload) {
+      throw new Error(payload?.error?.message || "Gemini could not analyze this test right now.");
+    }
     const raw = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
     if (!raw) throw new Error("The AI returned an empty analysis. Please try again.");
     let parsed: Partial<AiTestInsights>;
