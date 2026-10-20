@@ -329,7 +329,7 @@ export const completeTestAttempt = createServerFn({ method: "POST" })
            physics = question_days.physics + excluded.physics,
            chemistry = question_days.chemistry + excluded.chemistry,
            maths = question_days.maths + excluded.maths`,
-        [context.userId, (now() at time zone "Asia/Kolkata").toISOString().slice(0, 10), ...xpAdditions.map(([, xp]) => xp / 4)],
+        [context.userId, ...xpAdditions.map(([, xp]) => xp / 4)],
       );
     }
     await sql.query(
