@@ -122,11 +122,25 @@ export function DeskApp() {
   ]);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiCooldownUntil, setAiCooldownUntil] = useState<number | null>(null);
+  const [aiCooldownSeconds, setAiCooldownSeconds] = useState(0);
+
+  useEffect(() => {
+    if (aiCooldownUntil === null) return;
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((aiCooldownUntil - Date.now()) / 1000));
+      setAiCooldownSeconds(remaining);
+      if (remaining === 0) setAiCooldownUntil(null);
+    };
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [aiCooldownUntil]);
 
   async function handleSendAiMessage(e: FormEvent) {
     e.preventDefault();
     const query = aiInput.trim();
-    if (!query || aiLoading || !desk) return;
+    if (!query || aiLoading || aiCooldownSeconds > 0 || !desk) return;
 
     const newHistory = [...aiMessages, { role: "user" as const, text: query }];
     setAiMessages(newHistory);
@@ -153,31 +167,27 @@ export function DeskApp() {
           }
         ]
       });
-      let res: Response | null = null;
-      let data: any = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: requestBody,
-          });
-          data = await res.json();
-        } catch (error) {
-          if (attempt === 2) throw error;
-          await new Promise((resolve) => window.setTimeout(resolve, 800 * 2 ** attempt));
-          continue;
-        }
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+      });
+      const data = await res.json();
 
-        if (res.ok && !data.error) break;
-        const retryable = [429, 500, 502, 503, 504].includes(res.status);
-        if (!retryable || attempt === 2) break;
-        await new Promise((resolve) => window.setTimeout(resolve, 800 * 2 ** attempt));
-      }
-
-      if (!res?.ok || data?.error) {
-        const errorMessage = data?.error?.message || res?.statusText || "Gemini could not answer right now. Please try again.";
-        setAiMessages([...newHistory, { role: "ai", text: `❌ GOOGLE API ERROR: ${errorMessage}` }]);
+      if (!res.ok || data.error) {
+        const errorMessage = data.error?.message || res.statusText || "Gemini could not answer right now. Please try again.";
+        const retryMatch = errorMessage.match(/retry in\s+([\d.]+)\s*s/i);
+        const retrySeconds = retryMatch ? Math.ceil(Number(retryMatch[1])) + 2 : 0;
+        const cooldownSeconds = res.status === 503 ? Math.max(30, retrySeconds) : res.status === 429 ? retrySeconds : 0;
+        if (cooldownSeconds > 0) setAiCooldownUntil(Date.now() + cooldownSeconds * 1000);
+        const guidance = res.status === 429
+          ? retrySeconds > 0
+            ? `\n\nGemini asked to wait about ${retrySeconds} seconds. The Mentor will pause sending until then.`
+            : "\n\nGemini's quota is exhausted. Repeated messages won't help; try again after the quota resets."
+          : res.status === 503
+            ? `\n\nGemini is overloaded. Wait ${cooldownSeconds} seconds before trying again.`
+            : "";
+        setAiMessages([...newHistory, { role: "ai", text: `❌ GOOGLE API ERROR: ${errorMessage}${guidance}` }]);
         return;
       }
 
@@ -1181,7 +1191,7 @@ export function DeskApp() {
           <div className="flex items-center justify-between border-b border-line pb-3">
             <div>
               <h2 className="text-base font-semibold text-fg">AI JEE Mentor</h2>
-              <p className="text-xs text-muted">Powered by real Gemini 2.5 Flash.</p>
+              <p className="text-xs text-muted">Powered by Gemini 3.8 Flash.</p>
             </div>
             <span className="rounded-lg bg-raised px-2.5 py-1 text-xs font-semibold text-accent">Live API</span>
           </div>
@@ -1224,10 +1234,10 @@ export function DeskApp() {
             />
             <button
               type="submit"
-              disabled={aiLoading || !aiInput.trim()}
+              disabled={aiLoading || aiCooldownSeconds > 0 || !aiInput.trim()}
               className={`${primary} min-h-10 text-xs px-5`}
             >
-              Send
+              {aiCooldownSeconds > 0 ? `Wait ${aiCooldownSeconds}s` : "Send"}
             </button>
           </form>
         </section>
