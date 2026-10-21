@@ -142,28 +142,42 @@ export function DeskApp() {
         return;
       }
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `You are an expert, highly intelligent JEE mentor. Answer naturally, directly, and do not sound like a robot.\n\nStudent's Live Stats:\n- Streak: ${effectiveStreak} days\n- Total XP: ${desk.xp}\n- Lectures Left: ${desk.lecturesLeft}\n- Today's Questions Solved: ${todayQuestions}\n\nStudent Question: ${query}`
-                }
-              ]
-            }
-          ]
-        })
+      const requestBody = JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: `You are an expert, highly intelligent JEE mentor. Answer naturally, directly, and do not sound like a robot.\n\nStudent's Live Stats:\n- Streak: ${effectiveStreak} days\n- Total XP: ${desk.xp}\n- Lectures Left: ${desk.lecturesLeft}\n- Today's Questions Solved: ${todayQuestions}\n\nStudent Question: ${query}`
+              }
+            ]
+          }
+        ]
       });
+      let res: Response | null = null;
+      let data: any = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: requestBody,
+          });
+          data = await res.json();
+        } catch (error) {
+          if (attempt === 2) throw error;
+          await new Promise((resolve) => window.setTimeout(resolve, 800 * 2 ** attempt));
+          continue;
+        }
 
-      const data = await res.json();
+        if (res.ok && !data.error) break;
+        const retryable = [429, 500, 502, 503, 504].includes(res.status);
+        if (!retryable || attempt === 2) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 800 * 2 ** attempt));
+      }
 
-      if (!res.ok || data.error) {
-        const errorMessage = data.error?.message || res.statusText || "Unknown Error";
+      if (!res?.ok || data?.error) {
+        const errorMessage = data?.error?.message || res?.statusText || "Gemini could not answer right now. Please try again.";
         setAiMessages([...newHistory, { role: "ai", text: `❌ GOOGLE API ERROR: ${errorMessage}` }]);
-        setAiLoading(false);
         return;
       }
 
