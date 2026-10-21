@@ -34,6 +34,9 @@ import {
   listPyqChapters,
   listSolvedPyqQuestionIds,
   saveSolvedPyqQuestionIds,
+  listPyqQuestionProgress,
+  recordPyqQuestionAttempt,
+  type PyqQuestionProgress,
 } from "@/lib/pyq/api";
 import { TestGenerator } from "@/components/test-generator";
 import { mergeVaultChapters } from "@/lib/pyq/merge-chapters";
@@ -228,6 +231,9 @@ export function DeskApp() {
   // PYQ Section Navigation states
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [selectedPyqYear, setSelectedPyqYear] = useState<string>("all");
+  const [selectedPyqStatus, setSelectedPyqStatus] = useState<"all" | "solved" | "unsolved" | "incorrect">("all");
+  const [pyqProgress, setPyqProgress] = useState<Record<string, PyqQuestionProgress>>({});
+  const [checkingAnswer, setCheckingAnswer] = useState(false);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState<number | null>(null);
   const [loadedQuestionImage, setLoadedQuestionImage] = useState<{ id: string; url: string | null } | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -294,6 +300,11 @@ export function DeskApp() {
         .catch((error: unknown) => {
           if (!cancelled) setError(`Could not refresh account progress: ${messageOf(error)}`);
         });
+      void listPyqQuestionProgress()
+        .then((rows) => {
+          if (!cancelled) setPyqProgress(Object.fromEntries(rows.map((row) => [row.questionId, row])));
+        })
+        .catch(() => {});
     };
     refreshSolved();
     window.addEventListener("focus", refreshSolved);
@@ -327,6 +338,17 @@ export function DeskApp() {
       cancelled = true;
     };
   }, [selectedSubject]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    listPyqQuestionProgress().then((rows) => {
+      if (!cancelled) setPyqProgress(Object.fromEntries(rows.map((row) => [row.questionId, row])));
+    }).catch(() => {
+      // Keep the Vault usable if saved answer history is temporarily unavailable.
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   useEffect(() => {
     if (activeTab !== "pyq" || pyqView !== "dashboard" || dashboardLoaded) return;
@@ -414,48 +436,50 @@ export function DeskApp() {
   }
 
   async function handleCheckAnswer(q: QuestionItem, subject: SubjectId) {
-    setIsChecked(true);
+    if (checkingAnswer) return;
+    setCheckingAnswer(true);
     let correct = false;
     if (q.type === "mcq") {
       correct = selectedOption === q.correctAnswer;
     } else {
       correct = Number(integerInput.trim()) === Number(q.correctAnswer);
     }
-
-    if (!correct) return;
-
-    const alreadyAwarded = solvedIds.includes(q.id);
-    if (alreadyAwarded) {
-      setReward({ xp: 0, label: "Correct! (XP already claimed)" });
-      return;
-    }
-
-    const nextSolved = [...solvedIds, q.id];
-    setSolvedIds(nextSolved);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("jee_solved_pyq_ids", JSON.stringify(nextSolved));
-    }
-    void saveSolvedPyqQuestionIds({ data: { ids: [q.id] } }).catch((error: unknown) => {
-      setError(`Progress is saved on this device, but did not sync to your account: ${messageOf(error)}`);
-    });
-
-    if (desk) {
-      const earnedXP = 4;
-      try {
-        const nextSubjectCount = desk.todayQuestions[subject] + 1;
-        await setTodayQuestions({ data: { subject, count: nextSubjectCount } });
-        setDesk({
-          ...desk,
-          xp: desk.xp + earnedXP,
-          todayQuestions: {
-            ...desk.todayQuestions,
-            [subject]: nextSubjectCount,
-          },
-        });
-        setReward({ xp: earnedXP, label: "First-time PYQ Solved! (+4 XP & +1 Question)" });
-      } catch {
-        setReward({ xp: earnedXP, label: "First-time PYQ Solved! (+4 XP & +1 Question)" });
+    try {
+      const result = await recordPyqQuestionAttempt({
+        data: { attemptId: crypto.randomUUID(), questionId: q.id, subject, isCorrect: correct },
+      });
+      setIsChecked(true);
+      const prior = pyqProgress[q.id];
+      const nextProgress: PyqQuestionProgress = {
+        questionId: q.id,
+        subject,
+        attempts: (prior?.attempts ?? 0) + (result.recorded ? 1 : 0),
+        correctAttempts: (prior?.correctAttempts ?? 0) + (result.recorded && correct ? 1 : 0),
+        incorrectAttempts: (prior?.incorrectAttempts ?? 0) + (result.recorded && !correct ? 1 : 0),
+        lastResult: correct ? "correct" : "incorrect",
+        solved: Boolean(prior?.solved || result.newlySolved || correct),
+      };
+      setPyqProgress((current) => ({ ...current, [q.id]: nextProgress }));
+      if (correct) setSolvedIds((current) => [...new Set([...current, q.id])]);
+      if (desk && result.xpAward !== 0) {
+        setDesk((current) => current ? {
+          ...current,
+          xp: current.xp + result.xpAward,
+          todayQuestions: result.newlySolved
+            ? { ...current.todayQuestions, [subject]: current.todayQuestions[subject] + 1 }
+            : current.todayQuestions,
+        } : current);
       }
+      setReward({
+        xp: result.xpAward,
+        label: correct
+          ? result.xpAward > 0 ? "Correct retry! XP earned" : "Correct! XP already claimed"
+          : "Incorrect answer saved · −1 XP",
+      });
+    } catch (error) {
+      setError(`Could not save this answer: ${messageOf(error)}`);
+    } finally {
+      setCheckingAnswer(false);
     }
   }
 
@@ -466,19 +490,38 @@ export function DeskApp() {
   }
 
   const solvedIdSet = new Set(solvedIds);
+  const questionStatusOf = (questionId: string): "solved" | "unsolved" | "incorrect" => {
+    const progress = pyqProgress[questionId];
+    if (progress?.lastResult === "incorrect") return "incorrect";
+    if (solvedIdSet.has(questionId) || progress?.solved || progress?.lastResult === "correct") return "solved";
+    return "unsolved";
+  };
+  const subjectProgress = (subject: SubjectId) => {
+    const items = Object.values(pyqProgress).filter((item) => item.subject === subject);
+    const attempts = items.reduce((sum, item) => sum + item.attempts, 0);
+    const correct = items.reduce((sum, item) => sum + item.correctAttempts, 0);
+    return { attempts, correct, accuracy: attempts ? Math.round((correct / attempts) * 100) : null };
+  };
   const dashboardSubjectTotals = SUBJECTS.map((subject) => ({
     ...subject,
     solved: dashboardChapters
       .filter((chapter) => chapter.subject === subject.id)
       .reduce((total, chapter) => total + chapter.questions.filter((question) => solvedIdSet.has(question.id)).length, 0),
+    ...subjectProgress(subject.id),
   }));
   const dashboardSolvedChapters = dashboardSubject
     ? dashboardChapters
         .filter((chapter) => chapter.subject === dashboardSubject)
-        .map((chapter) => ({
-          ...chapter,
-          solved: chapter.questions.filter((question) => solvedIdSet.has(question.id)).length,
-        }))
+        .map((chapter) => {
+          const progress = chapter.questions.map((question) => pyqProgress[question.id]).filter((item): item is PyqQuestionProgress => Boolean(item));
+          const attempts = progress.reduce((sum, item) => sum + item.attempts, 0);
+          const correct = progress.reduce((sum, item) => sum + item.correctAttempts, 0);
+          return {
+            ...chapter,
+            solved: chapter.questions.filter((question) => solvedIdSet.has(question.id)).length,
+            accuracy: attempts ? Math.round((correct / attempts) * 100) : null,
+          };
+        })
         .filter((chapter) => chapter.solved > 0)
         .sort((a, b) => b.solved - a.solved || a.chapter.localeCompare(b.chapter))
     : [];
@@ -487,8 +530,11 @@ export function DeskApp() {
     ? [...new Set(currentChapterObj.questions.map((question) => question.year).filter((year): year is number => Number.isInteger(year)))].sort((a, b) => b - a)
     : [];
   const visibleChapterQuestions = currentChapterObj
-    ? currentChapterObj.questions.filter((question) => selectedPyqYear === "all"
-      || (selectedPyqYear === "unknown" ? question.year == null : question.year === Number(selectedPyqYear)))
+    ? currentChapterObj.questions.filter((question) => {
+      const yearMatches = selectedPyqYear === "all"
+        || (selectedPyqYear === "unknown" ? question.year == null : question.year === Number(selectedPyqYear));
+      return yearMatches && (selectedPyqStatus === "all" || questionStatusOf(question.id) === selectedPyqStatus);
+    })
     : [];
   const activeQuestion = currentChapterObj && activeQuestionIdx !== null
     ? visibleChapterQuestions[activeQuestionIdx]
