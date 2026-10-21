@@ -831,6 +831,9 @@ export function DeskApp() {
                   <p className="mt-1 text-xs text-muted">
                     Chapters with no solved questions are hidden.
                   </p>
+                  <p className="mt-1 text-xs text-muted">
+                    Accuracy: {subjectProgress(dashboardSubject).accuracy === null ? "No attempts yet" : `${subjectProgress(dashboardSubject).accuracy}%`} · {subjectProgress(dashboardSubject).attempts} answers checked
+                  </p>
                   {loadingDashboard ? (
                     <p className="mt-6 text-center text-xs text-muted animate-pulse">Loading your progress…</p>
                   ) : dashboardError ? (
@@ -858,7 +861,7 @@ export function DeskApp() {
                         >
                           <span className="font-semibold text-sm text-fg">{chapter.chapter}</span>
                           <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
-                            {chapter.solved} solved
+                            {chapter.solved} solved · {chapter.accuracy === null ? "No accuracy yet" : `${chapter.accuracy}% accuracy`}
                           </span>
                         </button>
                       ))}
@@ -884,7 +887,8 @@ export function DeskApp() {
                         >
                           <p className="text-sm font-semibold text-fg">{subject.name}</p>
                           <p className="mt-2 text-2xl font-bold tabular-nums text-accent">{subject.solved}</p>
-                          <p className="text-xs text-muted">questions solved</p>
+                          <p className="text-xs text-muted">{subject.accuracy === null ? "No accuracy yet" : `${subject.accuracy}% accuracy`}</p>
+                          <p className="text-[10px] text-muted">{subject.solved} questions solved · {subject.attempts} answers checked</p>
                         </button>
                       ))}
                     </div>
@@ -942,6 +946,7 @@ export function DeskApp() {
                         onClick={() => {
                           setSelectedChapter(ch.chapter);
                           setSelectedPyqYear("all");
+                          setSelectedPyqStatus("all");
                           setActiveQuestionIdx(null);
                           resetQuestionState();
                         }}
@@ -976,21 +981,37 @@ export function DeskApp() {
                 <span className="text-xs font-semibold text-fg">{selectedChapter}</span>
               </div>
 
-              {chapterYearOptions.length > 0 ? <label className="mt-4 block text-xs font-medium text-muted">Filter by exam year
-                <select value={selectedPyqYear} onChange={(event) => setSelectedPyqYear(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg sm:w-64">
-                  <option value="all">All years ({currentChapterObj.questions.length})</option>
-                  {chapterYearOptions.map((year) => <option key={year} value={String(year)}>{year} ({currentChapterObj.questions.filter((question) => question.year === year).length})</option>)}
-                  {currentChapterObj.questions.some((question) => question.year == null) ? <option value="unknown">Year not set ({currentChapterObj.questions.filter((question) => question.year == null).length})</option> : null}
-                </select>
-              </label> : <p className="mt-3 text-xs text-muted">Year tags are not set for these questions yet.</p>}
+              <div className="mt-4 flex flex-wrap gap-3">
+                <label className="block text-xs font-medium text-muted">Filter by exam year
+                  <select value={selectedPyqYear} onChange={(event) => setSelectedPyqYear(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg sm:w-64">
+                    <option value="all">All years ({currentChapterObj.questions.length})</option>
+                    {chapterYearOptions.map((year) => <option key={year} value={String(year)}>{year} ({currentChapterObj.questions.filter((question) => question.year === year).length})</option>)}
+                    {currentChapterObj.questions.some((question) => question.year == null) ? <option value="unknown">Year not set ({currentChapterObj.questions.filter((question) => question.year == null).length})</option> : null}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium text-muted">Filter by status
+                  <select value={selectedPyqStatus} onChange={(event) => setSelectedPyqStatus(event.target.value as typeof selectedPyqStatus)} className="mt-1 min-h-10 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg sm:w-64">
+                    {(["all", "unsolved", "incorrect", "solved"] as const).map((status) => {
+                      const count = currentChapterObj.questions.filter((question) => {
+                        const yearMatches = selectedPyqYear === "all"
+                          || (selectedPyqYear === "unknown" ? question.year == null : question.year === Number(selectedPyqYear));
+                        return yearMatches && (status === "all" || questionStatusOf(question.id) === status);
+                      }).length;
+                      const label = status === "all" ? "All statuses" : status[0].toUpperCase() + status.slice(1);
+                      return <option key={status} value={status}>{label} ({count})</option>;
+                    })}
+                  </select>
+                </label>
+              </div>
               {visibleChapterQuestions.length === 0 ? (
                 <div className="mt-6 rounded-xl border border-dashed border-line p-8 text-center text-xs text-muted">
-                  No questions added in this chapter yet.
+                  No questions match these filters.
                 </div>
               ) : (
                 <div className="mt-4 space-y-2">
                   {visibleChapterQuestions.map((q, idx) => {
-                    const isDone = solvedIds.includes(q.id);
+                    const isDone = questionStatusOf(q.id) === "solved";
+                    const isIncorrect = questionStatusOf(q.id) === "incorrect";
                     return (
                       <button
                         key={q.id}
@@ -1000,12 +1021,12 @@ export function DeskApp() {
                           resetQuestionState();
                         }}
                         className={`w-full flex items-center justify-between rounded-xl border p-3.5 text-left transition ${
-                          isDone ? "border-green-500/40 bg-green-500/5 hover:border-green-500" : "border-line bg-bg hover:border-accent"
+                          isDone ? "border-green-500/40 bg-green-500/5 hover:border-green-500" : isIncorrect ? "border-red-500/40 bg-red-500/5 hover:border-red-500" : "border-line bg-bg hover:border-accent"
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <span className={`size-6 rounded-lg text-center leading-6 text-xs font-bold ${
-                            isDone ? "bg-green-500/20 text-green-400" : "bg-surface text-accent"
+                            isDone ? "bg-green-500/20 text-green-400" : isIncorrect ? "bg-red-500/20 text-red-400" : "bg-surface text-accent"
                           }`}>
                             {idx + 1}
                           </span>
@@ -1017,7 +1038,7 @@ export function DeskApp() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          {isDone && <CheckCircle2 className="size-4 text-green-400 shrink-0" />}
+                          {isDone ? <CheckCircle2 className="size-4 text-green-400 shrink-0" /> : isIncorrect ? <XCircle className="size-4 text-red-400 shrink-0" /> : null}
                           <ChevronRight className="size-4 text-muted shrink-0" />
                         </div>
                       </button>
@@ -1091,7 +1112,7 @@ export function DeskApp() {
                         <button
                           key={optIdx}
                           type="button"
-                          disabled={isChecked}
+                          disabled={isChecked || checkingAnswer}
                           onClick={() => setSelectedOption(optIdx)}
                           className={`w-full flex items-center justify-between rounded-xl border px-4 py-3 text-xs transition ${style}`}
                         >
@@ -1110,7 +1131,7 @@ export function DeskApp() {
                     <label className="block text-xs text-muted font-medium">Enter Numerical Answer:</label>
                     <input
                       type="text"
-                      disabled={isChecked}
+                      disabled={isChecked || checkingAnswer}
                       value={integerInput}
                       placeholder="Type number..."
                       onChange={(e) => setIntegerInput(e.target.value)}
@@ -1156,17 +1177,21 @@ export function DeskApp() {
                 {!isChecked ? (
                   <button
                     type="button"
-                    disabled={activeQuestion.type === "mcq" ? selectedOption === null : !integerInput.trim()}
+                    disabled={checkingAnswer || (activeQuestion.type === "mcq" ? selectedOption === null : !integerInput.trim())}
                     onClick={() => handleCheckAnswer(activeQuestion, currentChapterObj.subject)}
                     className={`${primary} text-xs px-6`}
                   >
                     Check Answer
                   </button>
-                ) : solvedIds.includes(activeQuestion.id) ? (
+                ) : questionStatusOf(activeQuestion.id) === "solved" ? (
                   <span className="rounded-lg bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-400">
-                    Solved (+4 XP & +1 Question Added)
+                    Solved
                   </span>
-                ) : null}
+                ) : (
+                  <button type="button" onClick={resetQuestionState} className={`${quiet} text-xs`}>
+                    Try Again
+                  </button>
+                )}
 
                 <button
                   type="button"
