@@ -34,6 +34,9 @@ import {
   listPyqChapters,
   listSolvedPyqQuestionIds,
   saveSolvedPyqQuestionIds,
+  listPyqQuestionProgress,
+  recordPyqQuestionAttempt,
+  type PyqQuestionProgress,
 } from "@/lib/pyq/api";
 import { TestGenerator } from "@/components/test-generator";
 import { mergeVaultChapters } from "@/lib/pyq/merge-chapters";
@@ -228,6 +231,9 @@ export function DeskApp() {
   // PYQ Section Navigation states
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [selectedPyqYear, setSelectedPyqYear] = useState<string>("all");
+  const [selectedPyqStatus, setSelectedPyqStatus] = useState<"all" | "solved" | "unsolved" | "incorrect">("all");
+  const [pyqProgress, setPyqProgress] = useState<Record<string, PyqQuestionProgress>>({});
+  const [checkingAnswer, setCheckingAnswer] = useState(false);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState<number | null>(null);
   const [loadedQuestionImage, setLoadedQuestionImage] = useState<{ id: string; url: string | null } | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -294,6 +300,11 @@ export function DeskApp() {
         .catch((error: unknown) => {
           if (!cancelled) setError(`Could not refresh account progress: ${messageOf(error)}`);
         });
+      void listPyqQuestionProgress()
+        .then((rows) => {
+          if (!cancelled) setPyqProgress(Object.fromEntries(rows.map((row) => [row.questionId, row])));
+        })
+        .catch(() => {});
     };
     refreshSolved();
     window.addEventListener("focus", refreshSolved);
@@ -327,6 +338,17 @@ export function DeskApp() {
       cancelled = true;
     };
   }, [selectedSubject]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    listPyqQuestionProgress().then((rows) => {
+      if (!cancelled) setPyqProgress(Object.fromEntries(rows.map((row) => [row.questionId, row])));
+    }).catch(() => {
+      // Keep the Vault usable if saved answer history is temporarily unavailable.
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   useEffect(() => {
     if (activeTab !== "pyq" || pyqView !== "dashboard" || dashboardLoaded) return;
@@ -414,48 +436,50 @@ export function DeskApp() {
   }
 
   async function handleCheckAnswer(q: QuestionItem, subject: SubjectId) {
-    setIsChecked(true);
+    if (checkingAnswer) return;
+    setCheckingAnswer(true);
     let correct = false;
     if (q.type === "mcq") {
       correct = selectedOption === q.correctAnswer;
     } else {
       correct = Number(integerInput.trim()) === Number(q.correctAnswer);
     }
-
-    if (!correct) return;
-
-    const alreadyAwarded = solvedIds.includes(q.id);
-    if (alreadyAwarded) {
-      setReward({ xp: 0, label: "Correct! (XP already claimed)" });
-      return;
-    }
-
-    const nextSolved = [...solvedIds, q.id];
-    setSolvedIds(nextSolved);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("jee_solved_pyq_ids", JSON.stringify(nextSolved));
-    }
-    void saveSolvedPyqQuestionIds({ data: { ids: [q.id] } }).catch((error: unknown) => {
-      setError(`Progress is saved on this device, but did not sync to your account: ${messageOf(error)}`);
-    });
-
-    if (desk) {
-      const earnedXP = 4;
-      try {
-        const nextSubjectCount = desk.todayQuestions[subject] + 1;
-        await setTodayQuestions({ data: { subject, count: nextSubjectCount } });
-        setDesk({
-          ...desk,
-          xp: desk.xp + earnedXP,
-          todayQuestions: {
-            ...desk.todayQuestions,
-            [subject]: nextSubjectCount,
-          },
-        });
-        setReward({ xp: earnedXP, label: "First-time PYQ Solved! (+4 XP & +1 Question)" });
-      } catch {
-        setReward({ xp: earnedXP, label: "First-time PYQ Solved! (+4 XP & +1 Question)" });
+    try {
+      const result = await recordPyqQuestionAttempt({
+        data: { attemptId: crypto.randomUUID(), questionId: q.id, subject, isCorrect: correct },
+      });
+      setIsChecked(true);
+      const prior = pyqProgress[q.id];
+      const nextProgress: PyqQuestionProgress = {
+        questionId: q.id,
+        subject,
+        attempts: (prior?.attempts ?? 0) + (result.recorded ? 1 : 0),
+        correctAttempts: (prior?.correctAttempts ?? 0) + (result.recorded && correct ? 1 : 0),
+        incorrectAttempts: (prior?.incorrectAttempts ?? 0) + (result.recorded && !correct ? 1 : 0),
+        lastResult: correct ? "correct" : "incorrect",
+        solved: Boolean(prior?.solved || result.newlySolved || correct),
+      };
+      setPyqProgress((current) => ({ ...current, [q.id]: nextProgress }));
+      if (correct) setSolvedIds((current) => [...new Set([...current, q.id])]);
+      if (desk && result.xpAward !== 0) {
+        setDesk((current) => current ? {
+          ...current,
+          xp: current.xp + result.xpAward,
+          todayQuestions: result.newlySolved
+            ? { ...current.todayQuestions, [subject]: current.todayQuestions[subject] + 1 }
+            : current.todayQuestions,
+        } : current);
       }
+      setReward({
+        xp: result.xpAward,
+        label: correct
+          ? result.xpAward > 0 ? "Correct retry! XP earned" : "Correct! XP already claimed"
+          : "Incorrect answer saved · −1 XP",
+      });
+    } catch (error) {
+      setError(`Could not save this answer: ${messageOf(error)}`);
+    } finally {
+      setCheckingAnswer(false);
     }
   }
 
@@ -466,19 +490,38 @@ export function DeskApp() {
   }
 
   const solvedIdSet = new Set(solvedIds);
+  const questionStatusOf = (questionId: string): "solved" | "unsolved" | "incorrect" => {
+    const progress = pyqProgress[questionId];
+    if (progress?.lastResult === "incorrect") return "incorrect";
+    if (solvedIdSet.has(questionId) || progress?.solved || progress?.lastResult === "correct") return "solved";
+    return "unsolved";
+  };
+  const subjectProgress = (subject: SubjectId) => {
+    const items = Object.values(pyqProgress).filter((item) => item.subject === subject);
+    const attempts = items.reduce((sum, item) => sum + item.attempts, 0);
+    const correct = items.reduce((sum, item) => sum + item.correctAttempts, 0);
+    return { attempts, correct, accuracy: attempts ? Math.round((correct / attempts) * 100) : null };
+  };
   const dashboardSubjectTotals = SUBJECTS.map((subject) => ({
     ...subject,
     solved: dashboardChapters
       .filter((chapter) => chapter.subject === subject.id)
       .reduce((total, chapter) => total + chapter.questions.filter((question) => solvedIdSet.has(question.id)).length, 0),
+    ...subjectProgress(subject.id),
   }));
   const dashboardSolvedChapters = dashboardSubject
     ? dashboardChapters
         .filter((chapter) => chapter.subject === dashboardSubject)
-        .map((chapter) => ({
-          ...chapter,
-          solved: chapter.questions.filter((question) => solvedIdSet.has(question.id)).length,
-        }))
+        .map((chapter) => {
+          const progress = chapter.questions.map((question) => pyqProgress[question.id]).filter((item): item is PyqQuestionProgress => Boolean(item));
+          const attempts = progress.reduce((sum, item) => sum + item.attempts, 0);
+          const correct = progress.reduce((sum, item) => sum + item.correctAttempts, 0);
+          return {
+            ...chapter,
+            solved: chapter.questions.filter((question) => solvedIdSet.has(question.id)).length,
+            accuracy: attempts ? Math.round((correct / attempts) * 100) : null,
+          };
+        })
         .filter((chapter) => chapter.solved > 0)
         .sort((a, b) => b.solved - a.solved || a.chapter.localeCompare(b.chapter))
     : [];
@@ -487,8 +530,11 @@ export function DeskApp() {
     ? [...new Set(currentChapterObj.questions.map((question) => question.year).filter((year): year is number => Number.isInteger(year)))].sort((a, b) => b - a)
     : [];
   const visibleChapterQuestions = currentChapterObj
-    ? currentChapterObj.questions.filter((question) => selectedPyqYear === "all"
-      || (selectedPyqYear === "unknown" ? question.year == null : question.year === Number(selectedPyqYear)))
+    ? currentChapterObj.questions.filter((question) => {
+      const yearMatches = selectedPyqYear === "all"
+        || (selectedPyqYear === "unknown" ? question.year == null : question.year === Number(selectedPyqYear));
+      return yearMatches && (selectedPyqStatus === "all" || questionStatusOf(question.id) === selectedPyqStatus);
+    })
     : [];
   const activeQuestion = currentChapterObj && activeQuestionIdx !== null
     ? visibleChapterQuestions[activeQuestionIdx]
@@ -785,6 +831,9 @@ export function DeskApp() {
                   <p className="mt-1 text-xs text-muted">
                     Chapters with no solved questions are hidden.
                   </p>
+                  <p className="mt-1 text-xs text-muted">
+                    Accuracy: {subjectProgress(dashboardSubject).accuracy === null ? "No attempts yet" : `${subjectProgress(dashboardSubject).accuracy}%`} · {subjectProgress(dashboardSubject).attempts} answers checked
+                  </p>
                   {loadingDashboard ? (
                     <p className="mt-6 text-center text-xs text-muted animate-pulse">Loading your progress…</p>
                   ) : dashboardError ? (
@@ -812,7 +861,7 @@ export function DeskApp() {
                         >
                           <span className="font-semibold text-sm text-fg">{chapter.chapter}</span>
                           <span className="rounded-lg bg-surface px-2.5 py-1 text-xs font-semibold text-accent">
-                            {chapter.solved} solved
+                            {chapter.solved} solved · {chapter.accuracy === null ? "No accuracy yet" : `${chapter.accuracy}% accuracy`}
                           </span>
                         </button>
                       ))}
@@ -838,7 +887,8 @@ export function DeskApp() {
                         >
                           <p className="text-sm font-semibold text-fg">{subject.name}</p>
                           <p className="mt-2 text-2xl font-bold tabular-nums text-accent">{subject.solved}</p>
-                          <p className="text-xs text-muted">questions solved</p>
+                          <p className="text-xs text-muted">{subject.accuracy === null ? "No accuracy yet" : `${subject.accuracy}% accuracy`}</p>
+                          <p className="text-[10px] text-muted">{subject.solved} questions solved · {subject.attempts} answers checked</p>
                         </button>
                       ))}
                     </div>
@@ -896,6 +946,7 @@ export function DeskApp() {
                         onClick={() => {
                           setSelectedChapter(ch.chapter);
                           setSelectedPyqYear("all");
+                          setSelectedPyqStatus("all");
                           setActiveQuestionIdx(null);
                           resetQuestionState();
                         }}
@@ -930,21 +981,37 @@ export function DeskApp() {
                 <span className="text-xs font-semibold text-fg">{selectedChapter}</span>
               </div>
 
-              {chapterYearOptions.length > 0 ? <label className="mt-4 block text-xs font-medium text-muted">Filter by exam year
-                <select value={selectedPyqYear} onChange={(event) => setSelectedPyqYear(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg sm:w-64">
-                  <option value="all">All years ({currentChapterObj.questions.length})</option>
-                  {chapterYearOptions.map((year) => <option key={year} value={String(year)}>{year} ({currentChapterObj.questions.filter((question) => question.year === year).length})</option>)}
-                  {currentChapterObj.questions.some((question) => question.year == null) ? <option value="unknown">Year not set ({currentChapterObj.questions.filter((question) => question.year == null).length})</option> : null}
-                </select>
-              </label> : <p className="mt-3 text-xs text-muted">Year tags are not set for these questions yet.</p>}
+              <div className="mt-4 flex flex-wrap gap-3">
+                <label className="block text-xs font-medium text-muted">Filter by exam year
+                  <select value={selectedPyqYear} onChange={(event) => setSelectedPyqYear(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg sm:w-64">
+                    <option value="all">All years ({currentChapterObj.questions.length})</option>
+                    {chapterYearOptions.map((year) => <option key={year} value={String(year)}>{year} ({currentChapterObj.questions.filter((question) => question.year === year).length})</option>)}
+                    {currentChapterObj.questions.some((question) => question.year == null) ? <option value="unknown">Year not set ({currentChapterObj.questions.filter((question) => question.year == null).length})</option> : null}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium text-muted">Filter by status
+                  <select value={selectedPyqStatus} onChange={(event) => setSelectedPyqStatus(event.target.value as typeof selectedPyqStatus)} className="mt-1 min-h-10 w-full rounded-xl border border-line bg-bg px-3 text-sm text-fg sm:w-64">
+                    {(["all", "unsolved", "incorrect", "solved"] as const).map((status) => {
+                      const count = currentChapterObj.questions.filter((question) => {
+                        const yearMatches = selectedPyqYear === "all"
+                          || (selectedPyqYear === "unknown" ? question.year == null : question.year === Number(selectedPyqYear));
+                        return yearMatches && (status === "all" || questionStatusOf(question.id) === status);
+                      }).length;
+                      const label = status === "all" ? "All statuses" : status[0].toUpperCase() + status.slice(1);
+                      return <option key={status} value={status}>{label} ({count})</option>;
+                    })}
+                  </select>
+                </label>
+              </div>
               {visibleChapterQuestions.length === 0 ? (
                 <div className="mt-6 rounded-xl border border-dashed border-line p-8 text-center text-xs text-muted">
-                  No questions added in this chapter yet.
+                  No questions match these filters.
                 </div>
               ) : (
                 <div className="mt-4 space-y-2">
                   {visibleChapterQuestions.map((q, idx) => {
-                    const isDone = solvedIds.includes(q.id);
+                    const isDone = questionStatusOf(q.id) === "solved";
+                    const isIncorrect = questionStatusOf(q.id) === "incorrect";
                     return (
                       <button
                         key={q.id}
@@ -954,12 +1021,12 @@ export function DeskApp() {
                           resetQuestionState();
                         }}
                         className={`w-full flex items-center justify-between rounded-xl border p-3.5 text-left transition ${
-                          isDone ? "border-green-500/40 bg-green-500/5 hover:border-green-500" : "border-line bg-bg hover:border-accent"
+                          isDone ? "border-green-500/40 bg-green-500/5 hover:border-green-500" : isIncorrect ? "border-red-500/40 bg-red-500/5 hover:border-red-500" : "border-line bg-bg hover:border-accent"
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <span className={`size-6 rounded-lg text-center leading-6 text-xs font-bold ${
-                            isDone ? "bg-green-500/20 text-green-400" : "bg-surface text-accent"
+                            isDone ? "bg-green-500/20 text-green-400" : isIncorrect ? "bg-red-500/20 text-red-400" : "bg-surface text-accent"
                           }`}>
                             {idx + 1}
                           </span>
@@ -971,7 +1038,7 @@ export function DeskApp() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          {isDone && <CheckCircle2 className="size-4 text-green-400 shrink-0" />}
+                          {isDone ? <CheckCircle2 className="size-4 text-green-400 shrink-0" /> : isIncorrect ? <XCircle className="size-4 text-red-400 shrink-0" /> : null}
                           <ChevronRight className="size-4 text-muted shrink-0" />
                         </div>
                       </button>
@@ -1045,7 +1112,7 @@ export function DeskApp() {
                         <button
                           key={optIdx}
                           type="button"
-                          disabled={isChecked}
+                          disabled={isChecked || checkingAnswer}
                           onClick={() => setSelectedOption(optIdx)}
                           className={`w-full flex items-center justify-between rounded-xl border px-4 py-3 text-xs transition ${style}`}
                         >
@@ -1064,7 +1131,7 @@ export function DeskApp() {
                     <label className="block text-xs text-muted font-medium">Enter Numerical Answer:</label>
                     <input
                       type="text"
-                      disabled={isChecked}
+                      disabled={isChecked || checkingAnswer}
                       value={integerInput}
                       placeholder="Type number..."
                       onChange={(e) => setIntegerInput(e.target.value)}
@@ -1110,17 +1177,21 @@ export function DeskApp() {
                 {!isChecked ? (
                   <button
                     type="button"
-                    disabled={activeQuestion.type === "mcq" ? selectedOption === null : !integerInput.trim()}
+                    disabled={checkingAnswer || (activeQuestion.type === "mcq" ? selectedOption === null : !integerInput.trim())}
                     onClick={() => handleCheckAnswer(activeQuestion, currentChapterObj.subject)}
                     className={`${primary} text-xs px-6`}
                   >
                     Check Answer
                   </button>
-                ) : solvedIds.includes(activeQuestion.id) ? (
+                ) : questionStatusOf(activeQuestion.id) === "solved" ? (
                   <span className="rounded-lg bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-400">
-                    Solved (+4 XP & +1 Question Added)
+                    Solved
                   </span>
-                ) : null}
+                ) : (
+                  <button type="button" onClick={resetQuestionState} className={`${quiet} text-xs`}>
+                    Try Again
+                  </button>
+                )}
 
                 <button
                   type="button"

@@ -216,6 +216,13 @@ const qDays = await sql<{ day: string; physics: number; chemistry: number; maths
   const hoursDone = buckets.reduce((sum, bucket) => sum + bucket.completed * bucket.avgHours, 0);
   const lecturesLeft = buckets.reduce((sum, bucket) => sum + bucket.remaining, 0);
   const questionXp = history.reduce((sum, day) => sum + day.physics + day.chemistry + day.maths, 0);
+  const pyqAttemptXpRows = await sql<{ xp: number }>`
+    select (
+      coalesce((select sum(xp_delta) from pyq_question_attempts where user_id = ${userId}), 0)
+      + 3 * (select count(*) from pyq_solved_questions where user_id = ${userId})
+    )::int as xp
+  `;
+  const pyqAttemptXp = num(pyqAttemptXpRows[0]?.xp);
   const lectureXp = buckets.reduce((sum, bucket) => sum + bucket.completed, 0) * 10;
   const firstLectureDay = days.length ? days.slice().sort()[0] : null;
   const pace = paceOf({
@@ -237,7 +244,7 @@ const qDays = await sql<{ day: string; physics: number; chemistry: number; maths
     history,
     streak: streak.streak,
     streakAliveToday: streak.aliveToday,
-    xp: questionXp + lectureXp,
+    xp: questionXp + lectureXp + pyqAttemptXp,
     lecturesLeft,
     hoursLeft,
     hoursDone,

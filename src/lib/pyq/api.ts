@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { createMiddleware } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { istToday } from "@/lib/jee/pace";
 import { requireAdmin } from "@/lib/pyq/admin";
 import { parsePrepWiserText, correctAnswerToNumber } from "@/lib/pyq/parser";
 import {
@@ -17,6 +18,128 @@ const SUBJECTS: SubjectId[] = ["physics", "chemistry", "maths"];
 function isSubject(v: string): v is SubjectId {
   return SUBJECTS.includes(v as SubjectId);
 }
+
+
+export type PyqQuestionProgress = {
+  questionId: string;
+  subject: SubjectId;
+  attempts: number;
+  correctAttempts: number;
+  incorrectAttempts: number;
+  lastResult: "correct" | "incorrect";
+  solved: boolean;
+};
+
+/** Read saved Vault and test answers for the signed-in user. */
+export const listPyqQuestionProgress = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<PyqQuestionProgress[]> => {
+    const sql = await getSql();
+    const rows = await sql<{
+      question_id: string;
+      subject: string;
+      attempts: number;
+      correct_attempts: number;
+      incorrect_attempts: number;
+      last_result: boolean;
+      solved: boolean;
+    }>`
+      select a.question_id, a.subject, count(*)::int as attempts,
+        count(*) filter (where a.is_correct)::int as correct_attempts,
+        count(*) filter (where not a.is_correct)::int as incorrect_attempts,
+        (array_agg(a.is_correct order by a.attempted_at desc, a.attempt_id desc))[1] as last_result,
+        exists(select 1 from pyq_solved_questions s
+          where s.user_id = a.user_id and s.question_id = a.question_id) as solved
+      from pyq_question_attempts a
+      where a.user_id = ${context.userId}
+      group by a.user_id, a.question_id, a.subject
+    `;
+    return rows.flatMap((row) => {
+      if (!isSubject(row.subject)) return [];
+      return [{
+        questionId: row.question_id,
+        subject: row.subject,
+        attempts: Number(row.attempts) || 0,
+        correctAttempts: Number(row.correct_attempts) || 0,
+        incorrectAttempts: Number(row.incorrect_attempts) || 0,
+        lastResult: row.last_result ? "correct" : "incorrect",
+        solved: Boolean(row.solved),
+      }];
+    });
+  });
+
+/** Record one Vault answer and award +4 for a correct retry, −1 for a wrong try. */
+export const recordPyqQuestionAttempt = createServerFn({ method: "POST" })
+  .validator((input: { attemptId: string; questionId: string; subject: SubjectId; isCorrect: boolean }) => {
+    if (!input || typeof input.attemptId !== "string" || !input.attemptId.trim() || input.attemptId.length > 100) {
+      throw new Error("This answer could not be saved. Please try again.");
+    }
+    if (typeof input.questionId !== "string" || !input.questionId.trim() || input.questionId.length > 200) {
+      throw new Error("Choose a valid PYQ question.");
+    }
+    if (!isSubject(input.subject) || typeof input.isCorrect !== "boolean") {
+      throw new Error("This answer could not be saved. Please try again.");
+    }
+    return { ...input, questionId: input.questionId.trim() };
+  })
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const rows = await sql.query<{
+      recorded: boolean;
+      newly_solved: boolean;
+      is_correct: boolean;
+      xp_delta: number;
+    }>(
+      `with prior_attempt as (
+         select is_correct from pyq_question_attempts
+         where user_id = $1 and question_id = $3
+         order by attempted_at desc, attempt_id desc limit 1
+       ), prior_solve as (
+         select exists(
+           select 1 from pyq_solved_questions where user_id = $1 and question_id = $3
+         ) as solved
+       ), recorded_attempt as (
+         insert into pyq_question_attempts (
+           user_id, attempt_id, question_id, subject, is_correct, xp_delta
+         )
+         select $1, $2, $3, $4, $5,
+           case when not $5 then -1
+             when (select is_correct from prior_attempt limit 1) is false and (select solved from prior_solve) then 4
+             when not (select solved from prior_solve) then 0
+             when not exists (select 1 from prior_attempt) then 4
+             else 0 end
+         on conflict (user_id, attempt_id) do nothing
+         returning user_id, attempt_id, question_id, subject, is_correct, xp_delta
+       ), new_solve as (
+         insert into pyq_solved_questions (user_id, question_id)
+         select user_id, question_id from recorded_attempt where is_correct
+         on conflict (user_id, question_id) do nothing
+         returning user_id, question_id
+       ), daily_solve as (
+         insert into question_days (user_id, day, physics, chemistry, maths)
+         select s.user_id, $6,
+           case when r.subject = 'physics' then 1 else 0 end,
+           case when r.subject = 'chemistry' then 1 else 0 end,
+           case when r.subject = 'maths' then 1 else 0 end
+         from new_solve s join recorded_attempt r using (user_id, question_id)
+         on conflict (user_id, day) do update set
+           physics = question_days.physics + excluded.physics,
+           chemistry = question_days.chemistry + excluded.chemistry,
+           maths = question_days.maths + excluded.maths
+         returning user_id
+       )
+       select exists(select 1 from recorded_attempt) as recorded,
+         exists(select 1 from new_solve) as newly_solved,
+         coalesce((select is_correct from recorded_attempt limit 1), false) as is_correct,
+         coalesce((select xp_delta from recorded_attempt limit 1), 0)::int as xp_delta`,
+      [context.userId, data.attemptId, data.questionId, data.subject, data.isCorrect, istToday()],
+    );
+    const row = rows[0];
+    const newlySolved = Boolean(row?.newly_solved);
+    const xpAward = row?.recorded ? Number(row.xp_delta) + (newlySolved ? 4 : 0) : 0;
+    return { recorded: Boolean(row?.recorded), newlySolved, xpAward };
+  });
 
 const adminMiddleware = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
