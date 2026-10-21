@@ -106,7 +106,7 @@ export const recordPyqQuestionAttempt = createServerFn({ method: "POST" })
          select $1, $2, $3, $4, $5,
            case when not $5 then -1
              when (select is_correct from prior_attempt limit 1) is false and (select solved from prior_solve) then 4
-             when not (select solved from prior_solve) then 3
+             when not (select solved from prior_solve) then 0
              when not exists (select 1 from prior_attempt) then 4
              else 0 end
          on conflict (user_id, attempt_id) do nothing
@@ -137,7 +137,7 @@ export const recordPyqQuestionAttempt = createServerFn({ method: "POST" })
     );
     const row = rows[0];
     const newlySolved = Boolean(row?.newly_solved);
-    const xpAward = row?.recorded ? Number(row.xp_delta) + (newlySolved ? 1 : 0) : 0;
+    const xpAward = row?.recorded ? Number(row.xp_delta) + (newlySolved ? 4 : 0) : 0;
     return { recorded: Boolean(row?.recorded), newlySolved, xpAward };
   });
 
