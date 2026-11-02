@@ -34,6 +34,13 @@ export type DeskSettings = {
   janDate: string;
   aprilDate: string | null;
   advancedDate: string | null;
+  monthlyQuestionTarget: number;
+};
+
+export type JournalEntry = {
+  day: string;
+  reflection: string;
+  nextStep: string;
 };
 
 export type Desk = {
@@ -47,6 +54,9 @@ export type Desk = {
   lecturesLeft: number;
   hoursLeft: number;
   hoursDone: number;
+  weekHoursDone: number;
+  weekQuestionsDone: number;
+  monthQuestionsDone: number;
   studyDays: number;
   requiredHoursPerDay: number | null;
   paceHoursPerDay: number | null;
@@ -55,6 +65,7 @@ export type Desk = {
   settings: DeskSettings;
   weakTopics: WeakTopic[];
   todos: TodoItem[];
+  journalEntries: JournalEntry[];
   lastLecture: { subject: SubjectId; label: string } | null;
   todayLectures: number;
 };

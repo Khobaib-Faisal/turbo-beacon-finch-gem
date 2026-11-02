@@ -22,6 +22,13 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
 }
 
+/** Monday for the ISO week containing this date. */
+export function weekStartMonday(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return addDays(iso, day === 0 ? -6 : 1 - day);
+}
+
 /** Days you can still study, including today. 0 if the target is already past. */
 export function studyDaysUntil(today: string, target: string): number {
   const diff = daysBetween(today, target);
@@ -50,8 +57,8 @@ export type PaceInput = {
   today: string;
   targetDate: string;
   hoursLeft: number;
-  hoursDone: number;
-  firstLectureDay: string | null;
+  weekHoursDone: number;
+  weekStart: string;
 };
 
 export type PaceResult = {
@@ -68,7 +75,7 @@ export function paceOf(input: PaceInput): PaceResult {
   const requiredHoursPerDay =
     input.hoursLeft <= 0 ? 0 : studyDays > 0 ? input.hoursLeft / studyDays : null;
 
-  if (input.hoursDone <= 0 || !input.firstLectureDay) {
+  if (input.weekHoursDone <= 0) {
     return {
       studyDays,
       requiredHoursPerDay,
@@ -78,8 +85,8 @@ export function paceOf(input: PaceInput): PaceResult {
     };
   }
 
-  const elapsed = Math.max(1, daysBetween(input.firstLectureDay, input.today) + 1);
-  const paceHoursPerDay = input.hoursDone / elapsed;
+  const elapsed = Math.max(1, daysBetween(input.weekStart, input.today) + 1);
+  const paceHoursPerDay = input.weekHoursDone / elapsed;
   if (input.hoursLeft <= 0) {
     return {
       studyDays,
