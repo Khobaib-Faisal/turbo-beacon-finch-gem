@@ -11,7 +11,13 @@ import {
   ChevronRight,
   ArrowLeft,
   CheckCircle2,
-  XCircle
+  XCircle,
+  Timer,
+  NotebookPen,
+  Target,
+  Play,
+  Pause,
+  RotateCcw,
 } from "lucide-react";
 import { RedirectToSignIn, UserButton } from "@/lib/auth/gates";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
@@ -22,6 +28,7 @@ import {
   deleteWeakTopic,
   finishLecture,
   getDesk,
+  saveJournalEntry,
   saveSettings,
   setRemaining,
   setTodayQuestions,
@@ -426,20 +433,22 @@ export function DeskApp() {
     return () => window.clearTimeout(timer);
   }, [reward]);
 
-  async function run(action: () => Promise<DeskResult>) {
+  async function run(action: () => Promise<DeskResult>): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       const res = await action();
       setDesk(res.desk);
       if (res.reward) setReward(res.reward);
+      return true;
     } catch (err) {
       const message = messageOf(err);
       if (message.toLowerCase().includes("unauthorized")) {
         setSignedOut(true);
-        return;
+        return false;
       }
       setError(message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -478,6 +487,8 @@ export function DeskApp() {
           todayQuestions: result.newlySolved
             ? { ...current.todayQuestions, [subject]: current.todayQuestions[subject] + 1 }
             : current.todayQuestions,
+          weekQuestionsDone: current.weekQuestionsDone + (result.newlySolved ? 1 : 0),
+          monthQuestionsDone: current.monthQuestionsDone + (result.newlySolved ? 1 : 0),
         } : current);
       }
       setReward({
@@ -744,6 +755,13 @@ export function DeskApp() {
               }}
             />
           </section>
+
+          <StudySupport
+            desk={desk}
+            busy={busy}
+            onSaveSettings={(settings) => void run(() => saveSettings({ data: settings }))}
+            onSaveJournal={(reflection, nextStep) => run(() => saveJournalEntry({ data: { reflection, nextStep } }))}
+          />
 
           <Plan desk={desk} busy={busy} onSave={(settings) => void run(() => saveSettings({ data: settings }))} />
 
@@ -1355,6 +1373,198 @@ function ExamCard({
     </section>
   );
 }
+
+function StudySupport({
+  desk,
+  busy,
+  onSaveSettings,
+  onSaveJournal,
+}: {
+  desk: Desk;
+  busy: boolean;
+  onSaveSettings: (settings: DeskSettings) => void;
+  onSaveJournal: (reflection: string, nextStep: string) => Promise<boolean>;
+}) {
+  const [monthlyTarget, setMonthlyTarget] = useState(String(desk.settings.monthlyQuestionTarget));
+  const [reflection, setReflection] = useState("");
+  const [nextStep, setNextStep] = useState("");
+  const [journalStatus, setJournalStatus] = useState("");
+  const [timerSeconds, setTimerSeconds] = useState(5 * 60);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const todayEntry = desk.journalEntries.find((entry) => entry.day === desk.today);
+  const progress = Math.min(100, Math.round((desk.monthQuestionsDone / desk.settings.monthlyQuestionTarget) * 100));
+
+  useEffect(() => {
+    setMonthlyTarget(String(desk.settings.monthlyQuestionTarget));
+  }, [desk.settings.monthlyQuestionTarget]);
+
+  useEffect(() => {
+    setReflection(todayEntry?.reflection ?? "");
+    setNextStep(todayEntry?.nextStep ?? "");
+  }, [todayEntry?.reflection, todayEntry?.nextStep, desk.today]);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    const timer = window.setInterval(() => {
+      setTimerSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [timerRunning]);
+
+  useEffect(() => {
+    if (timerSeconds === 0) setTimerRunning(false);
+  }, [timerSeconds]);
+
+  function saveTarget() {
+    const target = Number(monthlyTarget);
+    if (!Number.isInteger(target) || target < 1 || target > 10000) {
+      setMonthlyTarget(String(desk.settings.monthlyQuestionTarget));
+      return;
+    }
+    if (target !== desk.settings.monthlyQuestionTarget) {
+      onSaveSettings({ ...desk.settings, monthlyQuestionTarget: target });
+    }
+  }
+
+  async function submitJournal(event: FormEvent) {
+    event.preventDefault();
+    setJournalStatus("");
+    const saved = await onSaveJournal(reflection, nextStep);
+    setJournalStatus(saved ? "Saved for today." : "Couldn’t save just now. Please try again.");
+  }
+
+  const clock = `${String(Math.floor(timerSeconds / 60)).padStart(2, "0")}:${String(timerSeconds % 60).padStart(2, "0")}`;
+
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4 sm:p-5">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-accent">A gentler study day</p>
+        <h2 className="mt-1 font-serif text-2xl font-bold leading-tight text-fg">One small step counts.</h2>
+        <p className="mt-1 text-sm text-muted">You don’t have to catch up all at once. Start where you are.</p>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-line bg-bg p-4">
+          <div className="flex items-center gap-2">
+            <Target className="size-4 text-accent" aria-hidden="true" />
+            <h3 className="text-sm font-semibold text-fg">This month</h3>
+          </div>
+          <div className="mt-3 flex items-end justify-between gap-3">
+            <p className="font-serif text-3xl leading-none tabular-nums text-fg">
+              {desk.monthQuestionsDone}<span className="ml-1 text-base text-muted">/</span>
+              <input
+                aria-label="Monthly question target"
+                className="ml-1 w-20 border-b border-line bg-transparent text-center font-serif text-2xl tabular-nums text-fg outline-none focus:border-accent"
+                inputMode="numeric"
+                value={monthlyTarget}
+                onChange={(event) => setMonthlyTarget(event.target.value.replace(/[^\d]/g, ""))}
+                onBlur={saveTarget}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+              />
+            </p>
+            <span className="text-xs text-muted">questions</span>
+          </div>
+          <div role="progressbar" aria-label="Monthly question target" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} className="mt-3 h-2 overflow-hidden rounded-full bg-raised">
+            <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-muted">{progress}% of your monthly goal · auto-saves when you leave the target</p>
+        </div>
+
+        <div className="rounded-xl border border-line bg-bg p-4">
+          <div className="flex items-center gap-2">
+            <Timer className="size-4 text-accent" aria-hidden="true" />
+            <h3 className="text-sm font-semibold text-fg">Quick Go · 5 minutes</h3>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted">Pick one tiny thing: open a question, review one formula, or just sit down and begin.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="min-w-16 font-mono text-2xl tabular-nums text-fg" role="timer" aria-live="off">{clock}</span>
+            <button
+              type="button"
+              className={primary}
+              onClick={() => {
+                if (timerRunning) setTimerRunning(false);
+                else {
+                  if (timerSeconds === 0) setTimerSeconds(5 * 60);
+                  setTimerRunning(true);
+                }
+              }}
+            >
+              {timerRunning ? <><Pause className="mr-1.5 inline size-4" />Pause</> : <><Play className="mr-1.5 inline size-4" />{timerSeconds < 300 && timerSeconds > 0 ? "Continue" : "Start"}</>}
+            </button>
+            <button type="button" className={`${quiet} px-3`} aria-label="Reset 5-minute timer" onClick={() => { setTimerRunning(false); setTimerSeconds(5 * 60); }}>
+              <RotateCcw className="size-4" />
+            </button>
+          </div>
+          {timerSeconds === 0 ? <p className="mt-2 text-xs font-medium text-accent" aria-live="polite">You showed up for five minutes. That counts.</p> : null}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-line bg-bg p-4">
+          <div className="flex items-center gap-2">
+            <Timer className="size-4 text-accent" aria-hidden="true" />
+            <h3 className="text-sm font-semibold text-fg">This week’s pace</h3>
+          </div>
+          <p className="mt-2 font-serif text-3xl leading-none tabular-nums text-fg">{formatHours(desk.weekHoursDone)} <span className="font-sans text-sm text-muted">study hours</span></p>
+          <p className="mt-1 text-xs text-muted">{desk.weekQuestionsDone} questions · resets every Monday</p>
+          {desk.paceHoursPerDay !== null && desk.projectedDate ? (
+            <p className="mt-2 text-xs text-fg">Current-week average: {formatHours(desk.paceHoursPerDay)} hours/day · at this pace, finish around <span className="font-semibold text-accent">{formatLong(desk.projectedDate)}</span>.</p>
+          ) : (
+            <p className="mt-2 text-xs text-muted">Log a lecture this week to see a fresh pace estimate. No old weeks are used.</p>
+          )}
+        </div>
+
+        <form className="rounded-xl border border-line bg-bg p-4" onSubmit={submitJournal}>
+          <div className="flex items-center gap-2">
+            <NotebookPen className="size-4 text-accent" aria-hidden="true" />
+            <h3 className="text-sm font-semibold text-fg">A private check-in</h3>
+          </div>
+          <label className="mt-3 block text-xs text-muted">
+            What’s on your mind? It can be messy or just a sentence.
+            <textarea
+              className={`${field} min-h-20 resize-y text-sm`}
+              maxLength={2000}
+              placeholder="No need to make it sound a certain way…"
+              value={reflection}
+              onChange={(event) => { setReflection(event.target.value); setJournalStatus(""); }}
+            />
+          </label>
+          <label className="mt-2 block text-xs text-muted">
+            One small next step (optional)
+            <input
+              className={`${field} text-sm`}
+              maxLength={240}
+              placeholder="e.g. solve one easy question"
+              value={nextStep}
+              onChange={(event) => { setNextStep(event.target.value); setJournalStatus(""); }}
+            />
+          </label>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <p className="text-[11px] text-muted">{journalStatus || "Saved to your account · only you can see it"}</p>
+            <button type="submit" className={`${quiet} min-h-9 px-3 text-xs`} disabled={busy || (!reflection.trim() && !nextStep.trim())}>Save today</button>
+          </div>
+          {desk.journalEntries.some((entry) => entry.day !== desk.today) ? (
+            <details className="mt-3 border-t border-line pt-3">
+              <summary className="cursor-pointer text-xs font-medium text-muted">Earlier check-ins</summary>
+              <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+                {desk.journalEntries.filter((entry) => entry.day !== desk.today).map((entry) => (
+                  <li key={entry.day} className="rounded-lg bg-surface p-2.5">
+                    <p className="text-[11px] text-muted">{formatLong(entry.day)}</p>
+                    {entry.reflection ? <p className="mt-1 whitespace-pre-wrap text-xs text-fg">{entry.reflection}</p> : null}
+                    {entry.nextStep ? <p className="mt-1 text-xs text-accent">Next: {entry.nextStep}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </form>
+      </div>
+    </section>
+  );
+}
+
 
 function Plan({
   desk,

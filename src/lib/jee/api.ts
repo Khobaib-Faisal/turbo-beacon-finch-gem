@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { istToday, paceOf, streakFromDays } from "@/lib/jee/pace";
-import type { Bucket, Desk, DeskResult, QuestionDay, SubjectId, TodoItem, WeakTopic } from "@/lib/jee/types";
+import { addDays, istToday, paceOf, streakFromDays, weekStartMonday } from "@/lib/jee/pace";
+import type { Bucket, Desk, DeskResult, JournalEntry, QuestionDay, SubjectId, TodoItem, WeakTopic } from "@/lib/jee/types";
 
 const SUBJECTS: SubjectId[] = ["physics", "chemistry", "maths"];
 
@@ -86,6 +86,7 @@ type SettingsRow = {
   jan_date: string;
   april_date: string | null;
   advanced_date: string | null;
+  monthly_question_target: number;
 };
 
 async function ensureSeed(userId: string) {
@@ -148,7 +149,7 @@ async function readDesk(userId: string): Promise<Desk> {
   const todayRow = history.find((row) => row.day === today);
 
   const settingsRows = await sql<SettingsRow>`
-    select target_date, jan_date, april_date, advanced_date
+    select target_date, jan_date, april_date, advanced_date, monthly_question_target
     from desk_settings
     where user_id = ${userId}
   `;
@@ -187,6 +188,25 @@ const qDays = await sql<{ day: string; physics: number; chemistry: number; maths
     where user_id = ${userId}
   `;
 
+  const weekStart = weekStartMonday(today);
+  const weekHoursRows = await sql<{ hours: number }>`
+    select coalesce(sum(b.avg_hours), 0) as hours
+    from lecture_logs l
+    join lecture_buckets b on b.id = l.bucket_id and b.user_id = l.user_id
+    where l.user_id = ${userId} and l.day >= ${weekStart} and l.day <= ${today}
+  `;
+  const journalRows = await sql<{ day: string; reflection: string; next_step: string }>`
+    select day, reflection, next_step
+    from study_journal
+    where user_id = ${userId} and day >= ${addDays(today, -13)} and day <= ${today}
+    order by day desc
+  `;
+  const journalEntries: JournalEntry[] = journalRows.map((row) => ({
+    day: String(row.day).slice(0, 10),
+    reflection: row.reflection,
+    nextStep: row.next_step,
+  }));
+
   // Dates with at least 1 finished lecture
   const lectureDates = logDays.map((row) => String(row.day).slice(0, 10));
 
@@ -224,14 +244,21 @@ const qDays = await sql<{ day: string; physics: number; chemistry: number; maths
   `;
   const pyqAttemptXp = num(pyqAttemptXpRows[0]?.xp);
   const lectureXp = buckets.reduce((sum, bucket) => sum + bucket.completed, 0) * 10;
-  const firstLectureDay = days.length ? days.slice().sort()[0] : null;
+  const weekHoursDone = num(weekHoursRows[0]?.hours);
   const pace = paceOf({
     today,
     targetDate: String(settings.target_date).slice(0, 10),
     hoursLeft,
-    hoursDone,
-    firstLectureDay,
+    weekHoursDone,
+    weekStart,
   });
+  const monthPrefix = today.slice(0, 7);
+  const monthQuestionsDone = history
+    .filter((day) => day.day.startsWith(monthPrefix))
+    .reduce((sum, day) => sum + day.physics + day.chemistry + day.maths, 0);
+  const weekQuestionsDone = history
+    .filter((day) => day.day >= weekStart && day.day <= today)
+    .reduce((sum, day) => sum + day.physics + day.chemistry + day.maths, 0);
 
   return {
     today,
@@ -248,6 +275,9 @@ const qDays = await sql<{ day: string; physics: number; chemistry: number; maths
     lecturesLeft,
     hoursLeft,
     hoursDone,
+    weekHoursDone,
+    weekQuestionsDone,
+    monthQuestionsDone,
     studyDays: pace.studyDays,
     requiredHoursPerDay: pace.requiredHoursPerDay,
     paceHoursPerDay: pace.paceHoursPerDay,
@@ -258,9 +288,11 @@ const qDays = await sql<{ day: string; physics: number; chemistry: number; maths
       janDate: String(settings.jan_date).slice(0, 10),
       aprilDate: settings.april_date ? String(settings.april_date).slice(0, 10) : null,
       advancedDate: settings.advanced_date ? String(settings.advanced_date).slice(0, 10) : null,
+      monthlyQuestionTarget: num(settings.monthly_question_target) || 300,
     },
     weakTopics,
     todos,
+    journalEntries,
     lastLecture: last && isSubject(last.subject) ? { subject: last.subject, label: last.label } : null,
     todayLectures: num(todayCount[0]?.n),
   };
@@ -459,11 +491,13 @@ export const saveSettings = createServerFn({ method: "POST" })
       janDate: string;
       aprilDate: string | null;
       advancedDate: string | null;
+      monthlyQuestionTarget: number;
     }) => ({
       targetDate: cleanDate(input?.targetDate, "Finish date"),
       janDate: cleanDate(input?.janDate, "January date"),
       aprilDate: optionalDate(input?.aprilDate, "April date"),
       advancedDate: optionalDate(input?.advancedDate, "Advanced date"),
+      monthlyQuestionTarget: cleanCount(input?.monthlyQuestionTarget, 10000),
     }),
   )
   .handler(async ({ context, data }) => {
@@ -473,8 +507,37 @@ export const saveSettings = createServerFn({ method: "POST" })
       set target_date = ${data.targetDate},
           jan_date = ${data.janDate},
           april_date = ${data.aprilDate},
-          advanced_date = ${data.advancedDate}
+          advanced_date = ${data.advancedDate},
+          monthly_question_target = ${data.monthlyQuestionTarget}
       where user_id = ${context.userId}
     `;
+    return result(context.userId, null);
+  });
+
+
+export const saveJournalEntry = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { reflection: string; nextStep: string }) => {
+    const reflection = typeof input?.reflection === "string" ? input.reflection.trim() : "";
+    const nextStep = typeof input?.nextStep === "string" ? input.nextStep.trim() : "";
+    if (reflection.length > 2000) throw new Error("Keep the reflection under 2,000 characters.");
+    if (nextStep.length > 240) throw new Error("Keep the next step under 240 characters.");
+    return { reflection, nextStep };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const today = istToday();
+    if (!data.reflection && !data.nextStep) {
+      await sql`delete from study_journal where user_id = ${context.userId} and day = ${today}`;
+    } else {
+      await sql`
+        insert into study_journal (user_id, day, reflection, next_step)
+        values (${context.userId}, ${today}, ${data.reflection}, ${data.nextStep})
+        on conflict (user_id, day) do update
+          set reflection = excluded.reflection,
+              next_step = excluded.next_step,
+              updated_at = now()
+      `;
+    }
     return result(context.userId, null);
   });
